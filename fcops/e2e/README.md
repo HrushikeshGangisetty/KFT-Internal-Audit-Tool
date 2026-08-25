@@ -16,8 +16,13 @@ playwright install chromium
 #   cd backend  && python manage.py runserver
 #   cd frontend && npm run dev
 
-python e2e/ui_walkthrough.py
+python e2e/ui_walkthrough.py       # the production loop
+python e2e/config_features.py     # the configuration features
 ```
+
+`config_features.py` covers Push Update, Manage Firmware, Test Configuration and
+FC Models, and asserts that each sidebar entry appears only for the role
+entitled to it — a technician must see none of them.
 
 It exits non-zero on any uncaught page error or failed assertion, and writes
 screenshots to `/tmp/v2-*.png`.

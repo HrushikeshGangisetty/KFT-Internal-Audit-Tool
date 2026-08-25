@@ -380,11 +380,36 @@ function FirmwareTab({ fc, current, onDone }) {
     config_result: 'SUCCESS', notes: '',
   })
 
+  const [builds, setBuilds] = useState([])
+  const [selectedBuild, setSelectedBuild] = useState('')
+  const [flashNotes, setFlashNotes] = useState('')
+  const [flashResult, setFlashResult] = useState('SUCCESS')
+  const [manual, setManual] = useState(false)
+
   const load = useCallback(() => {
     api('/api/firmware-records/', { params: { fc: fc.id } }).then((d) => setRows(listOf(d)))
     api('/api/parameter-profiles/').then((d) => setProfiles(listOf(d)))
+    api('/api/firmware-builds/', { params: { is_active: true, page_size: 100 } })
+      .then((d) => setBuilds(listOf(d)))
+      .catch(() => {})
   }, [fc.id])
   useEffect(() => { load() }, [load])
+
+  const flashBuild = async (e) => {
+    e.preventDefault(); setBusy(true); setError('')
+    try {
+      await api('/api/firmware-builds/flash/', {
+        method: 'POST',
+        body: {
+          fc: fc.id, build: Number(selectedBuild),
+          stage_record: current?.id ?? null,
+          flashing_result: flashResult, config_result: flashResult,
+          notes: flashNotes,
+        },
+      })
+      setSelectedBuild(''); setFlashNotes(''); load(); onDone()
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
 
   const set = (k) => (e) =>
     setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
@@ -431,9 +456,55 @@ function FirmwareTab({ fc, current, onDone }) {
         </div>
       )}
 
-      <form onSubmit={submit} style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-        <h3>Record a firmware operation</h3>
+      <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+        <h3>Flash a build from the catalogue</h3>
         <Banner>{error}</Banner>
+        <p className="small muted" style={{ marginTop: 0 }}>
+          The build's details are copied onto this FC's record, so its history
+          stays accurate even if the catalogue entry changes later.
+        </p>
+        <form onSubmit={flashBuild}>
+          <div className="grid cols-3">
+            <Field label="Firmware build">
+              <select value={selectedBuild} onChange={(e) => setSelectedBuild(e.target.value)}>
+                <option value="">— select a build —</option>
+                {builds.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} {b.version} · {b.firmware_type}
+                    {b.is_signed ? ' · signed' : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Flashing result">
+              <select value={flashResult} onChange={(e) => setFlashResult(e.target.value)}>
+                <option value="SUCCESS">Success</option>
+                <option value="PARTIAL">Partial</option>
+                <option value="FAILED">Failed</option>
+              </select>
+            </Field>
+            <Field label="Notes">
+              <input value={flashNotes} onChange={(e) => setFlashNotes(e.target.value)} />
+            </Field>
+          </div>
+          <div className="row">
+            <button disabled={busy || !selectedBuild}>Record flash</button>
+            <button type="button" className="secondary" onClick={() => setManual((m) => !m)}>
+              {manual ? 'Hide manual entry' : 'Enter manually instead'}
+            </button>
+          </div>
+          {builds.length === 0 ? (
+            <p className="small muted">
+              No active firmware builds in the catalogue yet — the Firmware
+              department adds them under Manage Firmware.
+            </p>
+          ) : null}
+        </form>
+      </div>
+
+      <form onSubmit={submit} hidden={!manual}
+            style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+        <h3>Record a firmware operation manually</h3>
         <div className="grid cols-3">
           <Field label="Firmware name"><input value={form.firmware_name} onChange={set('firmware_name')} required /></Field>
           <Field label="Version"><input value={form.version} onChange={set('version')} required /></Field>
@@ -491,6 +562,7 @@ function TestTab({ fc, current, onDone }) {
   const [gcs, setGcs] = useState('')
   const [cfg, setCfg] = useState('')
   const [notes, setNotes] = useState('')
+  const [version, setVersion] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const stage = fc.current_stage
@@ -502,11 +574,19 @@ function TestTab({ fc, current, onDone }) {
   useEffect(() => {
     load()
     api('/api/software-versions/', { params: { page_size: 100 } }).then((d) => setVersions(listOf(d)))
-    api('/api/checklist-templates/', { params: { stage } }).then((d) => {
-      const list = listOf(d)
-      setTemplates(list)
-      setItems((list[0]?.items || []).map((i) => ({ ...i, passed: true, note: '' })))
-    })
+    // Pull the checklist through /current/ so the tester always sees exactly the
+    // configuration a manager has published, together with its version.
+    api('/api/checklist-templates/', { params: { stage, is_active: true } })
+      .then((d) => {
+        const list = listOf(d)
+        setTemplates(list)
+        if (!list[0]) { setItems([]); return }
+        return api(`/api/checklist-templates/${list[0].id}/current/`).then((cfg) => {
+          setVersion(cfg.version)
+          setItems((cfg.items || []).map((i) => ({ ...i, passed: true, note: '' })))
+        })
+      })
+      .catch(() => {})
   }, [stage, load])
 
   if (!TEST_STAGES.includes(stage)) {
@@ -542,7 +622,11 @@ function TestTab({ fc, current, onDone }) {
       <h3>Test results</h3>
       <ResultsTable rows={rows} />
       <form onSubmit={submit} style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-        <h3>Record {humanize(stage)} checklist</h3>
+        <h3>
+          Record {humanize(stage)} checklist
+          {version ? <span className="tag info" style={{ marginLeft: 8 }}>
+            checklist v{version}</span> : null}
+        </h3>
         <Banner>{error}</Banner>
         {items.length === 0 ? <Empty>No checklist template configured for this stage.</Empty> : null}
         {items.map((item, idx) => (
@@ -550,7 +634,13 @@ function TestTab({ fc, current, onDone }) {
             <input type="checkbox" checked={item.passed} style={{ width: 'auto' }}
                    onChange={(e) => setItems((all) =>
                      all.map((x, i) => (i === idx ? { ...x, passed: e.target.checked } : x)))} />
-            <span style={{ minWidth: 260 }}>{item.label}</span>
+            <span style={{ minWidth: 260 }}>
+              {item.label}
+              {item.mandatory === false
+                ? <span className="muted small"> (optional)</span> : null}
+              {item.description
+                ? <div className="small muted">{item.description}</div> : null}
+            </span>
             <input placeholder="Note (optional)" value={item.note} style={{ maxWidth: 320 }}
                    onChange={(e) => setItems((all) =>
                      all.map((x, i) => (i === idx ? { ...x, note: e.target.value } : x)))} />

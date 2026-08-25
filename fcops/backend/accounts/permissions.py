@@ -65,3 +65,41 @@ class CanVerifyResolution(BasePermission):
         if not (user and user.is_authenticated):
             return False
         return user.is_test_engineer or user.is_lead_role
+
+
+class CanPushSoftwareUpdate(BasePermission):
+    """Everyone may read the release history; only the Software department (or
+    an admin) may add to it."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return user.can_push_software_update
+
+
+class CanManageFirmware(BasePermission):
+    """Everyone may read the firmware catalogue — an FC's history references it
+    — but only the Firmware department (or an admin) may change it."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return user.can_manage_firmware
+
+
+class IsManagerOrReadOnly(BasePermission):
+    """Configuration that a manager owns: test checklists, FC models."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return user.is_manager_role

@@ -6,3 +6,5 @@ django-cors-headers==4.9.0
 django-filter==26.1
 python-dotenv==1.2.2
 waitress==3.0.2
+gunicorn
+whitenoise

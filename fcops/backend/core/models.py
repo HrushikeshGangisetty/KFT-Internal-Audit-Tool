@@ -31,6 +31,8 @@ class AuditLogEntry(models.Model):
     ACTION_VERIFY = "VERIFICATION"
     ACTION_LOGIN = "LOGIN"
     ACTION_PERMISSION = "PERMISSION_CHANGE"
+    ACTION_CONFIG = "CONFIG_CHANGE"
+    ACTION_SOFTWARE_PUSH = "SOFTWARE_UPDATE_PUSHED"
 
     entity_type = models.CharField(max_length=64, db_index=True)
     entity_id = models.CharField(max_length=64, db_index=True)

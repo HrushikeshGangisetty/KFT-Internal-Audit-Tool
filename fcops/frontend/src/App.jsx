@@ -14,6 +14,10 @@ import IssueDetail from './pages/IssueDetail.jsx'
 import KnownIssues from './pages/KnownIssues.jsx'
 import Search from './pages/Search.jsx'
 import Admin from './pages/Admin.jsx'
+import PushUpdate from './pages/PushUpdate.jsx'
+import ManageFirmware from './pages/ManageFirmware.jsx'
+import TestConfiguration from './pages/TestConfiguration.jsx'
+import FcModels from './pages/FcModels.jsx'
 import AuditLog from './pages/AuditLog.jsx'
 
 function Shell({ children }) {
@@ -49,7 +53,35 @@ function Shell({ children }) {
           <NavLink to="/search">Knowledge Search</NavLink>
           <NavLink to="/known-issues">Known Issues</NavLink>
           <NavLink to="/audit">Audit Log</NavLink>
-          {user?.permissions?.is_admin ? <NavLink to="/admin">Admin</NavLink> : null}
+
+          {user?.permissions?.can_push_software_update ? (
+            <>
+              <div className="nav-section">Software</div>
+              <NavLink to="/software/push-update">Push Update</NavLink>
+            </>
+          ) : null}
+
+          {user?.permissions?.can_manage_firmware ? (
+            <>
+              <div className="nav-section">Firmware</div>
+              <NavLink to="/firmware/builds">Manage Firmware</NavLink>
+            </>
+          ) : null}
+
+          {user?.permissions?.can_configure_tests ? (
+            <>
+              <div className="nav-section">Manager</div>
+              <NavLink to="/manager/test-configuration">Test Configuration</NavLink>
+              <NavLink to="/manager/fc-models">FC Models</NavLink>
+            </>
+          ) : null}
+
+          {user?.permissions?.is_admin ? (
+            <>
+              <div className="nav-section">Administration</div>
+              <NavLink to="/admin">Admin</NavLink>
+            </>
+          ) : null}
         </nav>
         <div className="spacer" />
         <div className="who">
@@ -136,6 +168,10 @@ export default function App() {
         <Route path="/known-issues" element={<KnownIssues />} />
         <Route path="/search" element={<Search />} />
         <Route path="/audit" element={<AuditLog />} />
+        <Route path="/software/push-update" element={<PushUpdate />} />
+        <Route path="/firmware/builds" element={<ManageFirmware />} />
+        <Route path="/manager/test-configuration" element={<TestConfiguration />} />
+        <Route path="/manager/fc-models" element={<FcModels />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<p>Not found.</p>} />

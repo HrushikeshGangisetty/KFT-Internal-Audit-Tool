@@ -64,4 +64,12 @@ class MeSerializer(UserSerializer):
             "can_promote_known_issue": user.is_lead_role,
             "can_approve": user.is_manager_role,
             "can_verify": user.is_test_engineer or user.is_lead_role,
+            # Capability flags for the configuration features. The frontend uses
+            # these to decide what to show; the backend enforces them again on
+            # every write.
+            "can_push_software_update": user.can_push_software_update,
+            "can_manage_firmware": user.can_manage_firmware,
+            "can_approve_software_update": user.can_approve_software_update,
+            "can_configure_tests": user.is_manager_role,
+            "can_manage_fc_models": user.is_manager_role,
         }

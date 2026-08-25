@@ -9,11 +9,13 @@ from accounts.views import (AuditedTokenObtainPairView, DepartmentViewSet,
                             UserViewSet)
 from core.views import (AuditLogViewSet, DashboardSummaryView, HealthView,
                         NotificationViewSet)
-from fc.views import (ChecklistTemplateViewSet, FCModelTypeViewSet,
+from fc.views import (ChecklistItemViewSet, ChecklistTemplateViewSet,
+                      FCModelTypeViewSet, FirmwareBuildViewSet,
                       FirmwareRecordViewSet, FlightControllerViewSet,
                       LifecycleMetaView, ParameterProfileViewSet,
-                      ReworkRecordViewSet, SoftwareVersionViewSet,
-                      StageRecordViewSet, TestResultViewSet)
+                      ReworkRecordViewSet, SoftwareUpdateViewSet,
+                      SoftwareVersionViewSet, StageRecordViewSet,
+                      TestResultViewSet)
 from issues.views import (IssueAttachmentViewSet, IssueViewSet, KnownIssueViewSet)
 
 router = DefaultRouter()
@@ -23,6 +25,9 @@ router.register("fc-models", FCModelTypeViewSet)
 router.register("parameter-profiles", ParameterProfileViewSet)
 router.register("software-versions", SoftwareVersionViewSet)
 router.register("checklist-templates", ChecklistTemplateViewSet)
+router.register("checklist-items", ChecklistItemViewSet)
+router.register("firmware-builds", FirmwareBuildViewSet)
+router.register("software-updates", SoftwareUpdateViewSet)
 router.register("fcs", FlightControllerViewSet)
 router.register("stage-records", StageRecordViewSet)
 router.register("rework-records", ReworkRecordViewSet)

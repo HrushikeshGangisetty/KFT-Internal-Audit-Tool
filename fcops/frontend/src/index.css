@@ -58,6 +58,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .sidebar nav a:hover { background: rgba(255,255,255,.07); text-decoration: none; }
 .sidebar nav a.active { background: var(--accent); color: #fff; }
+.sidebar .nav-section {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px;
+  color: #6e88a4; padding: 14px 12px 4px; font-weight: 650;
+}
 .sidebar .spacer { flex: 1; }
 .sidebar .who { font-size: 12.5px; color: #92a8c0; padding: 10px 12px; border-top: 1px solid rgba(255,255,255,.1); }
 .sidebar .who strong { color: #fff; display: block; font-size: 13.5px; }
@@ -179,6 +183,6 @@ dl.kv dd { margin: 0; }
   .sidebar .brand { padding: 6px 10px; white-space: nowrap; }
   .sidebar .brand small { display: none; }
   .sidebar nav { display: flex; gap: 4px; }
-  .sidebar .who, .sidebar .spacer { display: none; }
+  .sidebar .who, .sidebar .spacer, .sidebar .nav-section { display: none; }
   .content { padding: 14px; }
 }

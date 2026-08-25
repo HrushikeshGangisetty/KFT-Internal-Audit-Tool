@@ -89,3 +89,26 @@ class User(AbstractUser):
             return False
         dept_id = getattr(department, "pk", department)
         return self.department_id == dept_id
+
+    def in_department_kind(self, kind):
+        """True when this user belongs to a department of the given kind.
+
+        Departments are configurable rows, so capability is derived from the
+        department's ``kind`` rather than from its name — a second Firmware
+        team can be created without touching permission code.
+        """
+        return bool(self.department_id and self.department.kind == kind)
+
+    @property
+    def can_push_software_update(self):
+        return self.is_admin_role or self.in_department_kind(Department.KIND_SOFTWARE)
+
+    @property
+    def can_manage_firmware(self):
+        return self.is_admin_role or self.in_department_kind(Department.KIND_FIRMWARE)
+
+    @property
+    def can_approve_software_update(self):
+        """Sign-off needs authority, not just membership: a department lead,
+        a manager or an admin."""
+        return self.is_lead_role

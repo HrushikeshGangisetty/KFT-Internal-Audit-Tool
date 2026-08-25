@@ -381,7 +381,7 @@ cd backend
 python manage.py test tests --noinput
 ```
 
-77 tests, ~1–3 minutes (PostgreSQL index creation dominates). They cover the full
+123 tests, ~5–8 minutes (PostgreSQL index creation dominates). They cover the full
 production loop, workflow rejection paths, RBAC at the API layer,
 search/similarity, audit-log immutability including a raw-SQL tamper attempt,
 and the database-configuration layer (URL parsing, percent-encoded passwords,
@@ -397,7 +397,8 @@ host it tried and why, rather than a psycopg2 traceback — see
 ```bash
 pip install -r requirements-dev.txt
 playwright install chromium
-python e2e/ui_walkthrough.py     # with backend and frontend both running
+python e2e/ui_walkthrough.py       # lifecycle: registration -> approval
+python e2e/config_features.py     # Push Update, Firmware, Test Config, FC Models
 ```
 
 Drives a real browser through registration, lifecycle progression, stage
@@ -432,6 +433,28 @@ except `/api/health/` and `/api/auth/token/`.
 | `GET /api/dashboard/summary/` | Manager dashboard aggregate. |
 | `GET /api/audit-log/` | Read-only, filterable. No write route exists. |
 | `GET /api/lifecycle/` | Stage list and allowed rework targets (drives the UI). |
+
+### Configuration & catalogue endpoints
+
+| Endpoint | Who may write | Purpose |
+|---|---|---|
+| `GET/POST /api/software-updates/` | Software department, admin | Internal GCS / Configurator release records. Git SHA, release notes and an authorised approver are mandatory. Records are immutable — `PATCH`/`DELETE` return 405. |
+| `GET /api/software-updates/approvers/` | — | Users entitled to sign off a release (leads, managers, admins). |
+| `GET/POST/PATCH /api/firmware-builds/` | Firmware department, admin | The firmware build catalogue. |
+| `POST /api/firmware-builds/{id}/set-active/` | Firmware department, admin | Retire or restore a build. |
+| `POST /api/firmware-builds/flash/` | Production writers | Record a flash of a catalogue build onto an FC, copying its fields into the FC's own record. |
+| `GET /api/firmware-builds/{id}/flashes/` | — | Every FC a build has been flashed onto. |
+| `GET/POST/PATCH /api/checklist-items/` | Manager, admin | Individual tests inside a checklist. |
+| `POST /api/checklist-items/{id}/set-active/` | Manager, admin | Enable/disable a test. |
+| `POST /api/checklist-templates/{id}/reorder/` | Manager, admin | Reorder tests. |
+| `GET /api/checklist-templates/{id}/current/` | — | The checklist a tester should see now, plus its version. |
+| `GET/POST/PATCH /api/fc-models/` | Manager, admin | FC models offered at registration. |
+| `POST /api/fc-models/{id}/set-active/` | Manager, admin | Archive or restore a model. |
+
+Everything above is readable by any authenticated user — an FC's history
+references these records, so hiding them would break traceability. Writes are
+enforced server-side by `accounts/permissions.py`; the frontend only mirrors the
+capability flags returned by `GET /api/users/me/`.
 
 ### Management commands
 

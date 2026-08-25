@@ -3,8 +3,9 @@ from rest_framework import serializers
 from accounts.serializers import DepartmentSerializer, UserSerializer
 
 from .lifecycle import ALLOWED_REWORK_TARGETS, STAGE_ORDER, Stage, rework_targets
-from .models import (ChecklistTemplate, FCEvent, FCModelType, FirmwareRecord,
-                     FlightController, ParameterProfile, ReworkRecord,
+from .models import (ChecklistItem, ChecklistTemplate, FCEvent, FCModelType,
+                     FirmwareBuild, FirmwareRecord, FlightController,
+                     ParameterProfile, ReworkRecord, SoftwareUpdate,
                      SoftwareVersion, StageRecord, TestResult)
 
 
@@ -106,11 +107,12 @@ class TestResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestResult
         fields = ("id", "fc", "stage_record", "test_type", "template",
-                  "checklist_results", "overall_passed", "tester", "tester_name",
+                  "template_version", "checklist_results", "overall_passed",
+                  "tester", "tester_name",
                   "gcs_version", "gcs_version_label", "configurator_version",
                   "configurator_version_label", "linked_issue", "notes",
                   "created_at")
-        read_only_fields = ("tester", "overall_passed")
+        read_only_fields = ("tester", "overall_passed", "template_version")
 
 
 class FCEventSerializer(serializers.ModelSerializer):
@@ -210,3 +212,102 @@ class ApprovalSerializer(serializers.Serializer):
 class OverrideSerializer(serializers.Serializer):
     target_stage = serializers.ChoiceField(choices=Stage.choices)
     reason = serializers.CharField()
+
+
+# ---------------------------------------------------------------------------
+# Configuration & catalogue features
+# ---------------------------------------------------------------------------
+class SoftwareUpdateSerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    pushed_by_name = serializers.CharField(source="pushed_by.full_name",
+                                           read_only=True, default="")
+    approved_by_name = serializers.CharField(source="approved_by.full_name",
+                                             read_only=True, default="")
+    approved_by_role = serializers.CharField(source="approved_by.get_role_display",
+                                             read_only=True, default="")
+    short_sha = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = SoftwareUpdate
+        fields = ("id", "kind", "kind_display", "version", "git_sha", "short_sha",
+                  "release_notes", "approved_by", "approved_by_name",
+                  "approved_by_role", "approved_at", "pushed_by", "pushed_by_name",
+                  "software_version", "created_at")
+        read_only_fields = ("pushed_by", "approved_at", "software_version")
+
+
+class SoftwareUpdateCreateSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=SoftwareUpdate.KIND_CHOICES)
+    version = serializers.CharField(max_length=64)
+    git_sha = serializers.CharField(max_length=120)
+    release_notes = serializers.CharField()
+    approved_by = serializers.IntegerField()
+
+
+class FirmwareBuildSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source="created_by.full_name",
+                                            read_only=True, default="")
+    parameter_profile_label = serializers.CharField(
+        source="parameter_profile.__str__", read_only=True, default="")
+    flash_count = serializers.IntegerField(read_only=True)
+    is_in_use = serializers.BooleanField(read_only=True)
+    source_type_display = serializers.CharField(source="get_source_type_display",
+                                                read_only=True)
+
+    class Meta:
+        model = FirmwareBuild
+        fields = ("id", "name", "firmware_type", "version", "git_sha",
+                  "build_datetime", "source_type", "source_type_display",
+                  "description", "includes_scripts", "script_name",
+                  "script_version", "script_notes", "is_signed", "is_locked",
+                  "bootloader_version", "bootloader_notes", "parameter_profile",
+                  "parameter_profile_label", "fc_models", "is_active",
+                  "created_by", "created_by_name", "flash_count", "is_in_use",
+                  "created_at", "updated_at")
+        read_only_fields = ("created_by",)
+
+
+class ChecklistItemSerializer(serializers.ModelSerializer):
+    is_in_use = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = ChecklistItem
+        fields = ("id", "template", "key", "label", "description", "is_mandatory",
+                  "order", "is_active", "is_in_use", "created_at", "updated_at")
+        read_only_fields = ("template",)
+
+
+class ChecklistTemplateDetailSerializer(serializers.ModelSerializer):
+    checklist_items = ChecklistItemSerializer(many=True, read_only=True)
+    active_item_count = serializers.SerializerMethodField()
+    stage_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ChecklistTemplate
+        fields = ("id", "fc_model", "stage", "stage_label", "name", "version",
+                  "is_active", "checklist_items", "active_item_count")
+
+    def get_active_item_count(self, obj):
+        return obj.active_items().count()
+
+    def get_stage_label(self, obj):
+        return Stage(obj.stage).label
+
+
+class ReorderSerializer(serializers.Serializer):
+    ordered_ids = serializers.ListField(child=serializers.IntegerField())
+
+
+class ActiveFlagSerializer(serializers.Serializer):
+    is_active = serializers.BooleanField()
+
+
+class FlashBuildSerializer(serializers.Serializer):
+    fc = serializers.IntegerField()
+    build = serializers.IntegerField()
+    stage_record = serializers.IntegerField(required=False, allow_null=True)
+    flashing_result = serializers.ChoiceField(
+        choices=FirmwareRecord.RESULT_CHOICES, default=FirmwareRecord.RESULT_SUCCESS)
+    config_result = serializers.ChoiceField(
+        choices=FirmwareRecord.RESULT_CHOICES, default=FirmwareRecord.RESULT_SUCCESS)
+    notes = serializers.CharField(required=False, allow_blank=True, default="")

@@ -173,6 +173,60 @@ Running the suite therefore requires a local PostgreSQL (or a separate
 disposable database). That is a deliberate cost: the alternative is a test run
 that can silently destroy shared production data.
 
+## 0b. Configuration features (pass 3)
+
+Four features added inside the existing architecture — no new app, no parallel
+patterns. Writes go through `fc/config_services.py`, which mirrors
+`fc/services.py`: authorisation, validation and audit in one place so no
+endpoint can bypass them.
+
+### What each one reuses
+
+| Feature | Reuses | New |
+|---|---|---|
+| Push Update | `SoftwareVersion` (a push registers the version testers pick from) | `SoftwareUpdate` |
+| Manage Firmware | `FirmwareRecord`, `ParameterProfile`, existing PRD §13 fields | `FirmwareBuild` catalogue + `FirmwareRecord.build` FK |
+| Test Configuration | `ChecklistTemplate`, `TestResult.checklist_results` snapshot | `ChecklistItem` rows + `ChecklistTemplate.version` + `TestResult.template_version` |
+| FC Models | `FCModelType` (already had `is_active`) | Manager RBAC + archive/audit services |
+
+### How history is protected
+
+Three separate mechanisms, because the three features fail differently:
+
+- **Firmware.** `FirmwareRecord` *copies* the build's fields at flash time
+  rather than pointing at them, so editing or retiring a catalogue entry cannot
+  rewrite what an FC was flashed with. The FK is `PROTECT` and the API refuses
+  to delete a build that has been used.
+- **Checklists.** `TestResult` already stored the answered items verbatim; it
+  now also stores `template_version`, so a past result carries both the answers
+  and the configuration generation they belong to. A test item that has been
+  answered cannot be re-keyed or deleted — only disabled.
+- **FC models.** Archived rather than deleted, and deletion is refused while any
+  FC references the model.
+
+### RBAC
+
+Capability is derived from the department's `kind`, not its name
+(`User.in_department_kind`), so a second Firmware or Software team can be
+created in the Admin console without touching permission code. Three new
+permission classes follow the existing read-for-all / write-for-some shape:
+`CanPushSoftwareUpdate`, `CanManageFirmware`, `IsManagerOrReadOnly`. No existing
+permission was widened — the one change is that FC models moved from admin-only
+to manager-and-admin, which the brief asked for.
+
+Approving a software release is a second, independent check: the approver must
+themselves be a lead, manager or admin, so a technician cannot self-approve by
+naming a colleague who lacks authority.
+
+### Assumptions
+
+- `firmware_type` is free text with UI suggestions rather than DB choices, so a
+  new build format never needs a migration.
+- Release records are immutable. A wrong release is corrected by pushing
+  another one, which is how release history behaves in practice.
+- Checklist edits apply to the template as a whole; per-FC-model checklist
+  variants remain a Phase 2 item, though the `fc_model` FK already supports them.
+
 ## 1. Architectural decisions
 
 | Decision | Rationale |
@@ -308,7 +362,7 @@ Nothing blocks local development. The following are placeholders in
 - **Closed issues are admin-editable** via `PUT /api/issues/{id}/` (audited), per
   PRD §8's "admin-level correction with an audit trail entry". There is no UI
   for this.
-- **Test suite is slow** (~1–3 min for 77 tests) because each test class rebuilds
+- **Test suite is slow** (~5–8 min for 123 tests) because each test class rebuilds
   GIN indexes. `--keepdb` helps locally.
 
 ## 7. Remaining work, in priority order

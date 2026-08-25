@@ -11,7 +11,7 @@ export default function FcCreate() {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    api('/api/fc-models/').then((d) => {
+    api('/api/fc-models/', { params: { is_active: true } }).then((d) => {
       const list = listOf(d)
       setModels(list)
       if (list[0]) setForm((f) => ({ ...f, fc_model: list[0].id }))
