@@ -1,0 +1,8 @@
+Django==5.2.17
+djangorestframework==3.18.0
+djangorestframework-simplejwt==5.5.1
+psycopg2-binary==2.9.12
+django-cors-headers==4.9.0
+django-filter==26.1
+python-dotenv==1.2.2
+waitress==3.0.2

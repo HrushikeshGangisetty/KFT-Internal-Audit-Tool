@@ -1,0 +1,25 @@
+# --- secrets: never commit a real environment file ---
+.env
+.env.*
+!.env.example
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+
+# --- django ---
+media/
+staticfiles/
+
+# --- node ---
+node_modules/
+dist/
+
+# --- misc ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
