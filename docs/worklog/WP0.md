@@ -1,7 +1,7 @@
 # WP0 — Baseline, inventory, and preservation
 Agent: Codex    Branch: wp/00-baseline    Date: 17 October 2026
 
-Draft review: [PR #1](https://github.com/HrushikeshGangisetty/KFT-Internal-Audit-Tool/pull/1). Awaiting Claude Code cross-review; not merged.
+Draft review: [PR #1](https://github.com/HrushikeshGangisetty/KFT-Internal-Audit-Tool/pull/1). Cross-reviewed by Claude Code and merged to `main` on 17 October 2026 at the user's request.
 
 ## Done
 
