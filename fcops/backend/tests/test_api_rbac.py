@@ -1,5 +1,5 @@
-"""API-level tests: authentication, RBAC enforcement on writes, universal read
-access, and the endpoints the frontend depends on."""
+"""API-level tests: authentication, RBAC enforcement on writes, and the
+endpoints the frontend depends on. Record visibility is in test_access_matrix."""
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -58,12 +58,14 @@ class AuthTests(ApiTestCase):
 
 
 class RbacTests(ApiTestCase):
-    def test_everyone_can_read_everything(self):
+    # test_everyone_can_read_everything was removed in WP1: universal read is
+    # no longer the policy. Per-actor visibility is in test_access_matrix.
+
+    def test_list_endpoints_answer_every_role(self):
         fc = fcsvc.register_fc(fc_model=self.model, actor=self.tech)
         for user in (self.tech, self.lead, self.tester, self.manager, self.admin):
             client = self.client_for(user)
             self.assertEqual(client.get("/api/fcs/").status_code, 200)
-            self.assertEqual(client.get(f"/api/fcs/{fc.id}/timeline/").status_code, 200)
             self.assertEqual(client.get("/api/issues/").status_code, 200)
             self.assertEqual(client.get("/api/known-issues/").status_code, 200)
             self.assertEqual(client.get("/api/audit-log/").status_code, 200)
@@ -189,8 +191,17 @@ class WorkflowApiTests(ApiTestCase):
                         {"outcome": "COMPLETED"}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
 
-        # Verification by a different person.
+        # Verification by a different person. WP1: Testing cannot read an
+        # Assembly issue until a head assigns them as its verifier.
         tester_client = self.client_for(self.tester)
+        self.assertEqual(tester_client.get(f"/api/issues/{issue_id}/").status_code, 404)
+        r = lead_client.post(f"/api/issues/{issue_id}/participants/",
+                             {"user": self.tester.id, "role": "verifier"},
+                             format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        r = client.post(f"/api/issues/{issue_id}/participants/",
+                        {"user": self.tester.id, "role": "verifier"}, format="json")
+        self.assertEqual(r.status_code, 403, "a non-head technician added a participant")
         r = tester_client.post(f"/api/issues/{issue_id}/status/",
                                {"status": IssueStatus.VERIFIED}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
@@ -218,7 +229,8 @@ class WorkflowApiTests(ApiTestCase):
             version_overrides={"firmware_version": "4.3.7"})
         issvc.change_status(issue, IssueStatus.RESOLVED, actor=self.lead,
                             root_cause="cold joint", resolution="reflow")
-        client = self.client_for(self.tester)
+        # The reporter can see their own issue; Testing could not (WP1).
+        client = self.client_for(self.tech)
         r = client.get("/api/issues/similar-search/",
                        {"text": "GPS not detected after flashing",
                         "firmware_version": "4.3.7"})

@@ -1,9 +1,20 @@
 from rest_framework import serializers
 
+from access import policy
+from access.mixins import ScopedPrimaryKeyRelatedField
 from fc.lifecycle import Stage
 
 from .models import (Category, Issue, IssueAttachment, IssueInvestigationNote,
-                     IssueReassignmentLog, IssueStatus, KnownIssue, Severity)
+                     IssueParticipant, IssueReassignmentLog, IssueStatus,
+                     KnownIssue, Severity)
+
+
+def _scoped_issues(serializer):
+    """The request user's visible issues, computed once per serializer tree."""
+    root = serializer.root
+    if not hasattr(root, "_visible_issues"):
+        root._visible_issues = policy.visible_issues(root.context["request"].user)
+    return root._visible_issues
 
 
 class InvestigationNoteSerializer(serializers.ModelSerializer):
@@ -37,6 +48,7 @@ class ReassignmentLogSerializer(serializers.ModelSerializer):
 
 
 class IssueAttachmentSerializer(serializers.ModelSerializer):
+    issue = ScopedPrimaryKeyRelatedField(policy.visible_issues)
     uploaded_by_name = serializers.CharField(source="uploaded_by.full_name",
                                              read_only=True, default="")
     url = serializers.SerializerMethodField()
@@ -48,14 +60,23 @@ class IssueAttachmentSerializer(serializers.ModelSerializer):
         read_only_fields = ("uploaded_by", "size", "content_type")
 
     def get_url(self, obj):
-        try:
-            return obj.file.url
-        except ValueError:
-            return ""
+        # Never the storage URL: downloads go through the scope check.
+        return f"/api/issue-attachments/{obj.pk}/download/"
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        data.pop("file", None)
+        return data
 
 
 class KnownIssueSerializer(serializers.ModelSerializer):
-    occurrence_count = serializers.IntegerField(read_only=True)
+    """Occurrence counts and links only ever cover the reader's visible
+    issues, so a hidden issue can show up neither as a link nor as a count."""
+
+    occurrence_count = serializers.SerializerMethodField()
+    verification_count = serializers.SerializerMethodField()
+    first_occurrence_issue = serializers.SerializerMethodField()
+    last_occurrence_issue = serializers.SerializerMethodField()
     promoted_by_name = serializers.CharField(source="promoted_by.full_name",
                                              read_only=True, default="")
     owning_department_name = serializers.CharField(source="owning_department.name",
@@ -69,9 +90,26 @@ class KnownIssueSerializer(serializers.ModelSerializer):
                   "status", "promoted_by", "promoted_by_name",
                   "first_occurrence_issue", "last_occurrence_issue",
                   "verification_count", "occurrence_count", "created_at",
-                  "updated_at")
-        read_only_fields = ("promoted_by", "first_occurrence_issue",
-                            "last_occurrence_issue", "verification_count")
+                  "updated_at", "audience", "audience_departments")
+        read_only_fields = ("promoted_by",)
+
+    def _occurrences(self, obj):
+        return _scoped_issues(self).filter(known_issue=obj)
+
+    def get_occurrence_count(self, obj):
+        return self._occurrences(obj).count()
+
+    def get_verification_count(self, obj):
+        return self._occurrences(obj).filter(
+            status__in=[IssueStatus.VERIFIED, IssueStatus.CLOSED]).count()
+
+    def get_first_occurrence_issue(self, obj):
+        return self._occurrences(obj).order_by("created_at").values_list(
+            "pk", flat=True).first()
+
+    def get_last_occurrence_issue(self, obj):
+        return self._occurrences(obj).order_by("-created_at").values_list(
+            "pk", flat=True).first()
 
 
 class IssueListSerializer(serializers.ModelSerializer):
@@ -100,11 +138,21 @@ class IssueListSerializer(serializers.ModelSerializer):
         return Stage(obj.discovered_stage).label
 
 
+class ParticipantSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.full_name", read_only=True,
+                                      default="")
+
+    class Meta:
+        model = IssueParticipant
+        fields = ("id", "user", "user_name", "role", "added_by", "added_at")
+
+
 class IssueDetailSerializer(IssueListSerializer):
     investigation_notes = InvestigationNoteSerializer(many=True, read_only=True)
     reassignments = ReassignmentLogSerializer(many=True, read_only=True)
     attachments = IssueAttachmentSerializer(many=True, read_only=True)
-    known_issue_detail = KnownIssueSerializer(source="known_issue", read_only=True)
+    known_issue_detail = serializers.SerializerMethodField()
+    participants = serializers.SerializerMethodField()
     discovered_by_name = serializers.CharField(source="discovered_by.full_name",
                                                read_only=True, default="")
     resolved_by_name = serializers.CharField(source="resolved_by.full_name",
@@ -123,7 +171,18 @@ class IssueDetailSerializer(IssueListSerializer):
             "discovered_stage_record", "resolved_by", "resolved_by_name",
             "verified_by", "verified_by_name", "verified_at", "closed_at",
             "investigation_notes", "reassignments", "attachments",
-            "known_issue_detail", "allowed_transitions")
+            "known_issue_detail", "participants", "allowed_transitions")
+
+    def get_known_issue_detail(self, obj):
+        if obj.known_issue_id is None:
+            return None
+        user = self.context["request"].user
+        known = policy.visible_knowledge(user).filter(pk=obj.known_issue_id).first()
+        return KnownIssueSerializer(known, context=self.context).data if known else None
+
+    def get_participants(self, obj):
+        return ParticipantSerializer(
+            obj.participants.filter(removed_at__isnull=True), many=True).data
 
     def get_allowed_transitions(self, obj):
         from .models import ISSUE_TRANSITIONS
@@ -157,6 +216,11 @@ class StatusChangeSerializer(serializers.Serializer):
     root_cause = serializers.CharField(required=False, allow_blank=True)
     resolution = serializers.CharField(required=False, allow_blank=True)
     root_cause_department = serializers.IntegerField(required=False, allow_null=True)
+
+
+class ParticipantAddSerializer(serializers.Serializer):
+    user = serializers.IntegerField()
+    role = serializers.ChoiceField(choices=IssueParticipant.ROLE_CHOICES)
 
 
 class ReassignSerializer(serializers.Serializer):

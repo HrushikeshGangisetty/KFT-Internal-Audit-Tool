@@ -107,7 +107,7 @@ STRUCTURED_BOOSTS = [
 ]
 
 
-def find_similar(*, text, stage=None, category=None, hardware_revision=None,
+def find_similar(*, issues, known_issues, text, stage=None, category=None, hardware_revision=None,
                  firmware_version=None, gcs_version=None,
                  configurator_version=None, parameter_profile=None,
                  exclude_issue_id=None, limit=10):
@@ -116,11 +116,13 @@ def find_similar(*, text, stage=None, category=None, hardware_revision=None,
     Score = full-text rank + structured-field overlap bonuses. Resolved and
     known issues are boosted because a resolved match is what the searcher
     actually needs (PRD §21).
-    """
-    from .models import Issue, IssueStatus, KnownIssue
 
-    qs = Issue.objects.select_related("fc", "assigned_department",
-                                      "discovering_department", "known_issue")
+    ``issues`` and ``known_issues`` are the caller's scoped querysets; ranking
+    and limits apply only within them.
+    """
+    from .models import IssueStatus
+
+    qs = issues
     if exclude_issue_id:
         qs = qs.exclude(pk=exclude_issue_id)
 
@@ -178,7 +180,7 @@ def find_similar(*, text, stage=None, category=None, hardware_revision=None,
     known = []
     if query is not None:
         known = list(
-            KnownIssue.objects.filter(search_vector=query, status="ACTIVE")
+            known_issues.filter(search_vector=query, status="ACTIVE")
             .annotate(rank=SearchRank(F("search_vector"), query))
             .order_by("-rank")[:5])
 

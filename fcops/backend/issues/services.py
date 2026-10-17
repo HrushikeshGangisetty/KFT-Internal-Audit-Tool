@@ -1,6 +1,7 @@
 """Issue workflow services (PRD §9, §10, §11, §17)."""
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from core import audit
@@ -10,7 +11,8 @@ from fc.models import FirmwareRecord, StageRecord
 from fc.services import log_event
 
 from .models import (ISSUE_TRANSITIONS, Category, Issue, IssueInvestigationNote,
-                     IssueReassignmentLog, IssueStatus, KnownIssue, Severity)
+                     IssueParticipant, IssueReassignmentLog, IssueStatus,
+                     KnownIssue, Severity)
 from .search import reindex_issue, reindex_known_issue
 
 
@@ -23,21 +25,31 @@ def generate_key(year=None):
     return f"{prefix}{seq:05d}"
 
 
-def notify(user, verb, message, link=""):
+def notify(user, kind, issue):
+    """Store a pointer only; the text is rendered at read time (WP1)."""
     if user is None:
         return None
-    return Notification.objects.create(recipient=user, verb=verb, message=message,
-                                       link=link)
+    return Notification.objects.create(recipient=user, kind=kind,
+                                       target_type="issue", target_id=issue.pk)
 
 
-def notify_department(department, verb, message, link="", exclude=None):
+def notify_department(department, kind, issue, exclude=None):
     if department is None:
         return
     from accounts.models import User
-    for user in User.objects.filter(department=department, is_active=True):
+    for user in User.objects.filter(
+            is_active=True, pk__in=_active_member_ids(department)):
         if exclude and user.pk == exclude.pk:
             continue
-        notify(user, verb, message, link)
+        notify(user, kind, issue)
+
+
+def _active_member_ids(department):
+    from accounts.models import TeamMembership
+    now = timezone.now()
+    return TeamMembership.objects.filter(
+        Q(active_to__isnull=True) | Q(active_to__gt=now),
+        department=department, active_from__lte=now).values("user_id")
 
 
 def capture_versions(fc):
@@ -106,16 +118,14 @@ def create_issue(*, fc, title, symptoms, actor, discovered_stage=None,
         IssueReassignmentLog.objects.create(
             issue=issue, from_department=None, to_department=assigned_department,
             to_person=assigned_person, reason="Initial assignment", actor=actor)
-        notify_department(assigned_department, "ISSUE_ASSIGNED",
-                          f"{issue.key} assigned to your department: {issue.title}",
-                          link=f"/issues/{issue.id}", exclude=actor)
+        notify_department(assigned_department, "ISSUE_ASSIGNED", issue,
+                          exclude=actor)
     if issue.severity in (Severity.BLOCKER, Severity.MAJOR):
-        from accounts.models import Role, User
-        for manager in User.objects.filter(role__in=[Role.MANAGER, Role.ADMIN],
-                                           is_active=True):
-            notify(manager, "HIGH_SEVERITY_ISSUE",
-                   f"{issue.get_severity_display()} issue {issue.key} opened on "
-                   f"{fc.serial}", link=f"/issues/{issue.id}")
+        from accounts.models import Capability, User
+        for manager in User.objects.filter(
+                is_active=True, capability_grants__capability=Capability.IS_MANAGER,
+                capability_grants__revoked_at__isnull=True):
+            notify(manager, "HIGH_SEVERITY_ISSUE", issue)
 
     fc.recompute_status()
     return issue
@@ -164,13 +174,10 @@ def reassign(issue, *, actor, to_department=None, to_person=None, reason):
               f"{issue.key} reassigned to "
               f"{issue.assigned_department or 'unassigned'}",
               detail=reason, stage=issue.discovered_stage, actor=actor, issue=issue)
-    notify_department(issue.assigned_department, "ISSUE_ASSIGNED",
-                      f"{issue.key} reassigned to your department: {issue.title}",
-                      link=f"/issues/{issue.id}", exclude=actor)
+    notify_department(issue.assigned_department, "ISSUE_ASSIGNED", issue,
+                      exclude=actor)
     if to_person:
-        notify(to_person, "ISSUE_ASSIGNED",
-               f"{issue.key} assigned to you: {issue.title}",
-               link=f"/issues/{issue.id}")
+        notify(to_person, "ISSUE_ASSIGNED", issue)
     return issue
 
 
@@ -232,9 +239,7 @@ def change_status(issue, new_status, *, actor, note="", root_cause=None,
               stage=issue.discovered_stage, actor=actor, issue=issue)
     for watcher in {issue.discovered_by, issue.assigned_person}:
         if watcher and actor and watcher.pk != actor.pk:
-            notify(watcher, "ISSUE_STATUS",
-                   f"{issue.key} is now {issue.get_status_display()}",
-                   link=f"/issues/{issue.id}")
+            notify(watcher, "ISSUE_STATUS", issue)
     if issue.known_issue_id:
         issue.known_issue.refresh_rollup()
     issue.fc.recompute_status()
@@ -321,3 +326,35 @@ def link_issue_to_known(issue, known, *, actor, reason=""):
               f"{issue.key} linked to known issue “{known.title}”",
               stage=issue.discovered_stage, actor=actor, issue=issue)
     return issue
+
+
+@transaction.atomic
+def add_participant(issue, *, user, role, actor):
+    """Give someone outside the issue's department scope explicit access as a
+    collaborator or assigned verifier (WP1). Adding is idempotent."""
+    if role not in dict(IssueParticipant.ROLE_CHOICES):
+        raise WorkflowError(f"Unknown participant role '{role}'.", code="invalid_role")
+    existing = IssueParticipant.objects.filter(issue=issue, user=user, role=role,
+                                               removed_at__isnull=True).first()
+    if existing:
+        return existing
+    participant = IssueParticipant.objects.create(issue=issue, user=user, role=role,
+                                                  added_by=actor)
+    audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=actor,
+                 after={"participant": user.pk, "role": role},
+                 note=f"{role.title()} added", fc=issue.fc)
+    notify(user, "ISSUE_ASSIGNED", issue)
+    return participant
+
+
+@transaction.atomic
+def remove_participant(participant, *, actor):
+    if participant.removed_at is not None:
+        return participant
+    participant.removed_at = timezone.now()
+    participant.save(update_fields=["removed_at"])
+    audit.record(participant.issue, AuditLogEntry.ACTION_UPDATE, actor=actor,
+                 after={"participant_removed": participant.user_id,
+                        "role": participant.role},
+                 note=f"{participant.role.title()} removed", fc=participant.issue.fc)
+    return participant

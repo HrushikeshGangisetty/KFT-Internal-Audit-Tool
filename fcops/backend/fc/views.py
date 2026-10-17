@@ -11,6 +11,8 @@ from accounts.models import Department, Role, User
 from accounts.permissions import (CanManageFirmware, CanPushSoftwareUpdate,
                                   CanWriteProduction, IsAdmin, IsManager,
                                   IsManagerOrReadOnly)
+from access import policy
+from access.mixins import ScopedViewSetMixin
 from core import audit
 from core.exceptions import WorkflowError
 from core.models import AuditLogEntry
@@ -37,14 +39,17 @@ from .serializers import (ActiveFlagSerializer, ApprovalSerializer,
                           StageRecordSerializer, TestResultSerializer)
 
 
-class FCModelTypeViewSet(viewsets.ModelViewSet):
+class FCModelTypeViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     """FC models, owned by the Manager. Models in use are archived, never
     deleted, so historical FCs keep a valid reference."""
 
-    queryset = FCModelType.objects.all()
     serializer_class = FCModelTypeSerializer
     permission_classes = [IsManagerOrReadOnly]
     filterset_fields = ("is_active",)
+
+    def get_scoped_queryset(self):
+        # Catalogue/configuration: readable by all staff.
+        return FCModelType.objects.all()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -80,26 +85,35 @@ class FCModelTypeViewSet(viewsets.ModelViewSet):
         return Response(FCModelTypeSerializer(model).data)
 
 
-class ParameterProfileViewSet(viewsets.ModelViewSet):
-    queryset = ParameterProfile.objects.all()
+class ParameterProfileViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = ParameterProfileSerializer
     permission_classes = [CanWriteProduction]
 
+    def get_scoped_queryset(self):
+        # Catalogue/configuration: readable by all staff.
+        return ParameterProfile.objects.all()
 
-class SoftwareVersionViewSet(viewsets.ModelViewSet):
-    queryset = SoftwareVersion.objects.all()
+
+class SoftwareVersionViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = SoftwareVersionSerializer
     permission_classes = [CanWriteProduction]
     filterset_fields = ("kind", "is_active")
 
+    def get_scoped_queryset(self):
+        # Catalogue/configuration: readable by all staff.
+        return SoftwareVersion.objects.all()
 
-class ChecklistTemplateViewSet(viewsets.ModelViewSet):
+
+class ChecklistTemplateViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     """Test checklists. Managers configure them; everyone can read the current
     definition because testers need it to run a test."""
 
-    queryset = ChecklistTemplate.objects.prefetch_related("checklist_items").all()
     permission_classes = [IsManagerOrReadOnly]
     filterset_fields = ("stage", "fc_model", "is_active")
+
+    def get_scoped_queryset(self):
+        # Catalogue/configuration: readable by all staff.
+        return ChecklistTemplate.objects.prefetch_related("checklist_items").all()
 
     def get_serializer_class(self):
         if self.action in ("list", "retrieve"):
@@ -135,13 +149,16 @@ class ChecklistTemplateViewSet(viewsets.ModelViewSet):
                          "items": template.as_checklist()})
 
 
-class FlightControllerViewSet(viewsets.ModelViewSet):
-    queryset = (FlightController.objects.select_related("fc_model", "registered_by",
-                                                        "approved_by")
-                .all())
+class FlightControllerViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [CanWriteProduction]
     filterset_fields = ("status", "current_stage", "fc_model", "hardware_revision")
     ordering_fields = ("created_at", "serial", "updated_at")
+
+    def get_scoped_queryset(self):
+        return policy.scope_by_fc(
+            self.request.user,
+            FlightController.objects.select_related("fc_model", "registered_by",
+                                                    "approved_by"))
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -239,7 +256,12 @@ class FlightControllerViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def timeline(self, request, pk=None):
         fc = self.get_object()
-        return Response(FCEventSerializer(services.build_timeline(fc), many=True).data)
+        # Events about an issue the reader cannot see are left out entirely:
+        # their titles and details are copied from the issue.
+        events = services.build_timeline(fc).filter(
+            Q(issue__isnull=True)
+            | Q(issue__in=policy.visible_issues(request.user)))
+        return Response(FCEventSerializer(events, many=True).data)
 
     @action(detail=True, methods=["get"])
     def stage_records(self, request, pk=None):
@@ -252,31 +274,40 @@ class FlightControllerViewSet(viewsets.ModelViewSet):
     def issues(self, request, pk=None):
         from issues.serializers import IssueListSerializer
         fc = self.get_object()
-        qs = fc.issues.select_related("assigned_department", "discovering_department",
-                                      "assigned_person", "discovered_by").all()
+        qs = policy.visible_issues(request.user).filter(fc=fc).select_related(
+            "assigned_department", "discovering_department", "assigned_person",
+            "discovered_by")
         return Response(IssueListSerializer(qs, many=True).data)
 
     @action(detail=True, methods=["get"])
     def audit_log(self, request, pk=None):
         from core.serializers import AuditLogEntrySerializer
         fc = self.get_object()
-        qs = fc.audit_entries.select_related("actor").all()[:500]
+        qs = (policy.visible_audit_entries(request.user).filter(fc=fc)
+              .select_related("actor")[:500])
         return Response(AuditLogEntrySerializer(qs, many=True).data)
 
 
-class StageRecordViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = StageRecord.objects.select_related("fc", "operator", "department").all()
+class StageRecordViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     serializer_class = StageRecordSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ("fc", "stage", "status")
 
+    def get_scoped_queryset(self):
+        return policy.scope_by_fc(
+            self.request.user,
+            StageRecord.objects.select_related("fc", "operator", "department"))
 
-class ReworkRecordViewSet(viewsets.ModelViewSet):
-    queryset = ReworkRecord.objects.select_related("fc", "stage_record",
-                                                   "performed_by").all()
+
+class ReworkRecordViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = ReworkRecordSerializer
     permission_classes = [CanWriteProduction]
     filterset_fields = ("fc", "outcome", "stage_record")
+
+    def get_scoped_queryset(self):
+        return policy.scope_by_fc(
+            self.request.user,
+            ReworkRecord.objects.select_related("fc", "stage_record", "performed_by"))
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -305,12 +336,15 @@ class ReworkRecordViewSet(viewsets.ModelViewSet):
         return Response(ReworkRecordSerializer(rework).data)
 
 
-class FirmwareRecordViewSet(viewsets.ModelViewSet):
-    queryset = FirmwareRecord.objects.select_related("fc", "operator",
-                                                     "parameter_profile").all()
+class FirmwareRecordViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = FirmwareRecordSerializer
     permission_classes = [CanWriteProduction]
     filterset_fields = ("fc", "version", "source_type", "flashing_result")
+
+    def get_scoped_queryset(self):
+        return policy.scope_by_fc(
+            self.request.user,
+            FirmwareRecord.objects.select_related("fc", "operator", "parameter_profile"))
 
     def perform_create(self, serializer):
         obj = serializer.save(operator=self.request.user)
@@ -330,13 +364,16 @@ class FirmwareRecordViewSet(viewsets.ModelViewSet):
                             note="Firmware record updated", actor=self.request.user)
 
 
-class TestResultViewSet(viewsets.ModelViewSet):
-    queryset = TestResult.objects.select_related("fc", "tester", "stage_record",
-                                                 "gcs_version",
-                                                 "configurator_version").all()
+class TestResultViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = TestResultSerializer
     permission_classes = [CanWriteProduction]
     filterset_fields = ("fc", "test_type", "overall_passed")
+
+    def get_scoped_queryset(self):
+        return policy.scope_by_fc(
+            self.request.user,
+            TestResult.objects.select_related("fc", "tester", "stage_record",
+                                              "gcs_version", "configurator_version"))
 
     def perform_create(self, serializer):
         obj = serializer.save(tester=self.request.user)
@@ -377,7 +414,7 @@ class LifecycleMetaView(viewsets.ViewSet):
 # ---------------------------------------------------------------------------
 # Configuration & catalogue features
 # ---------------------------------------------------------------------------
-class SoftwareUpdateViewSet(viewsets.ModelViewSet):
+class SoftwareUpdateViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     """Internal release records for the in-house GCS / Configurator.
 
     Readable by everyone (the release history is knowledge), writable only by
@@ -385,13 +422,15 @@ class SoftwareUpdateViewSet(viewsets.ModelViewSet):
     happened, and correcting it means pushing another one.
     """
 
-    queryset = (SoftwareUpdate.objects
-                .select_related("approved_by", "pushed_by", "software_version")
-                .all())
     serializer_class = SoftwareUpdateSerializer
     permission_classes = [CanPushSoftwareUpdate]
     filterset_fields = ("kind", "approved_by", "pushed_by")
     ordering_fields = ("created_at", "version")
+
+    def get_scoped_queryset(self):
+        # Release history: readable by all staff until WP11.
+        return SoftwareUpdate.objects.select_related(
+            "approved_by", "pushed_by", "software_version")
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -437,16 +476,18 @@ class SoftwareUpdateViewSet(viewsets.ModelViewSet):
         return Response(UserSerializer(qs, many=True).data)
 
 
-class FirmwareBuildViewSet(viewsets.ModelViewSet):
+class FirmwareBuildViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     """The catalogue of firmware builds that may be flashed onto an FC."""
 
-    queryset = (FirmwareBuild.objects
-                .select_related("parameter_profile", "created_by")
-                .prefetch_related("fc_models").all())
     serializer_class = FirmwareBuildSerializer
     permission_classes = [CanManageFirmware]
     filterset_fields = ("is_active", "source_type", "firmware_type", "is_signed")
     ordering_fields = ("created_at", "name", "version")
+
+    def get_scoped_queryset(self):
+        # Catalogue/configuration: readable by all staff.
+        return (FirmwareBuild.objects.select_related("parameter_profile", "created_by")
+                .prefetch_related("fc_models"))
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -494,7 +535,8 @@ class FirmwareBuildViewSet(viewsets.ModelViewSet):
     def flashes(self, request, pk=None):
         """Every FC this build has been flashed onto."""
         build = self.get_object()
-        qs = build.flashes.select_related("fc", "operator").all()
+        qs = policy.scope_by_fc(request.user, build.flashes.select_related(
+            "fc", "operator"))
         return Response(FirmwareRecordSerializer(qs, many=True).data)
 
     @action(detail=False, methods=["post"])
@@ -504,7 +546,7 @@ class FirmwareBuildViewSet(viewsets.ModelViewSet):
         s = FlashBuildSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         data = s.validated_data
-        fc = get_object_or_404(FlightController, pk=data["fc"])
+        fc = get_object_or_404(policy.visible_fcs(request.user), pk=data["fc"])
         build = get_object_or_404(FirmwareBuild, pk=data["build"])
         stage_record = (StageRecord.objects.filter(pk=data.get("stage_record"),
                                                    fc=fc).first()
@@ -527,13 +569,16 @@ class FirmwareBuildViewSet(viewsets.ModelViewSet):
         })
 
 
-class ChecklistItemViewSet(viewsets.ModelViewSet):
+class ChecklistItemViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     """Individual tests inside a checklist. Manager-configurable."""
 
-    queryset = ChecklistItem.objects.select_related("template").all()
     serializer_class = ChecklistItemSerializer
     permission_classes = [IsManagerOrReadOnly]
     filterset_fields = ("template", "is_active", "is_mandatory")
+
+    def get_scoped_queryset(self):
+        # Catalogue/configuration: readable by all staff.
+        return ChecklistItem.objects.select_related("template").all()
 
     def create(self, request, *args, **kwargs):
         template = get_object_or_404(ChecklistTemplate,

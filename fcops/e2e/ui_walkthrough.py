@@ -110,8 +110,12 @@ with sync_playwright() as p:
     page.select_option('select >> nth=3', "HARDWARE")
     page.wait_for_timeout(2200)
     similar = page.locator('.card:has(h2:text("Has this happened before?"))').inner_text()
-    assert "ISS-" in similar, "similar-issue panel found nothing"
-    log("similar-issue panel surfaced prior issues live while typing")
+    # WP1: a Manual Assembly technician cannot see other departments' past
+    # issues, so the panel may legitimately be empty for them. It must still
+    # answer; step 8b checks that a head sees the prior issues.
+    assert ("ISS-" in similar or "Known issues" in similar
+            or "No similar historical issues found" in similar), similar
+    log("similar-issue panel answered live while typing (scoped to the technician)")
     # assign to Machine Assembly
     page.select_option('select >> nth=4', label="Machine Assembly")
     page.click('button:has-text("Create issue")')
@@ -144,6 +148,9 @@ with sync_playwright() as p:
     login(page, "hw.lead")
     page.goto(issue_url, wait_until="networkidle")
     page.wait_for_selector("text=Reassignment history", timeout=15000)
+    page.wait_for_selector('.card:has(h2:text("Similar past issues")) >> text=ISS-',
+                           timeout=15000)
+    log("a head sees prior issues from other departments in the similar panel")
     page.select_option('.card:has(h2:text("Reassignment history")) select',
                        label="Hardware Rework")
     page.fill('.card:has(h2:text("Reassignment history")) input',
@@ -168,6 +175,16 @@ with sync_playwright() as p:
     no_error(page, "recording the resolution")
     log("root cause + resolution recorded (root-cause dept differs from discovery)")
     page.screenshot(path="/tmp/v2-issue.png", full_page=True)
+
+    # ---- 9b. Assign an independent verifier (WP1: Testing cannot read other
+    # departments' issues unless explicitly assigned) ----
+    page.select_option('select[aria-label="Participant"]', label="Sanjay Kumar")
+    page.select_option('select[aria-label="Participant role"]', "verifier")
+    page.click('.card:has(h2:text("Participants")) button:has-text("Add")')
+    page.wait_for_selector('.card:has(h2:text("Participants")) >> text=Sanjay Kumar · Verifier',
+                           timeout=15000)
+    no_error(page, "assigning the verifier")
+    log("head assigned the test engineer as verifier")
 
     # ---- 10. Verification by a different person ----
     login(page, "test.eng1")

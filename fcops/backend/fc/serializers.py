@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from access import policy
+from access.mixins import ScopedPrimaryKeyRelatedField
 from accounts.serializers import DepartmentSerializer, UserSerializer
 
 from .lifecycle import ALLOWED_REWORK_TARGETS, STAGE_ORDER, Stage, rework_targets
@@ -64,6 +66,9 @@ class StageRecordSerializer(serializers.ModelSerializer):
 
 
 class ReworkRecordSerializer(serializers.ModelSerializer):
+    stage_record = ScopedPrimaryKeyRelatedField(policy.visible_stage_records)
+    originating_issue = ScopedPrimaryKeyRelatedField(
+        policy.visible_issues, required=False, allow_null=True)
     performed_by_name = serializers.CharField(source="performed_by.full_name",
                                               read_only=True, default="")
     originating_issue_key = serializers.CharField(source="originating_issue.key",
@@ -80,6 +85,9 @@ class ReworkRecordSerializer(serializers.ModelSerializer):
 
 
 class FirmwareRecordSerializer(serializers.ModelSerializer):
+    fc = ScopedPrimaryKeyRelatedField(policy.visible_fcs)
+    stage_record = ScopedPrimaryKeyRelatedField(
+        policy.visible_stage_records, required=False, allow_null=True)
     operator_name = serializers.CharField(source="operator.full_name",
                                           read_only=True, default="")
     parameter_profile_label = serializers.CharField(source="parameter_profile.__str__",
@@ -97,6 +105,10 @@ class FirmwareRecordSerializer(serializers.ModelSerializer):
 
 
 class TestResultSerializer(serializers.ModelSerializer):
+    fc = ScopedPrimaryKeyRelatedField(policy.visible_fcs)
+    stage_record = ScopedPrimaryKeyRelatedField(policy.visible_stage_records)
+    linked_issue = ScopedPrimaryKeyRelatedField(
+        policy.visible_issues, required=False, allow_null=True)
     tester_name = serializers.CharField(source="tester.full_name", read_only=True,
                                         default="")
     gcs_version_label = serializers.CharField(source="gcs_version.version",

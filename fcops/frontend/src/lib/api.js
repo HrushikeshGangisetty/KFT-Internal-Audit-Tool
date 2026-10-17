@@ -103,3 +103,21 @@ export async function login(username, password) {
 }
 
 export const listOf = (payload) => (Array.isArray(payload) ? payload : payload?.results ?? [])
+
+// Attachments are served only through an authorised endpoint, so a plain
+// link cannot carry the bearer token. Fetch the file and hand it to the browser.
+export async function download(path, filename) {
+  const send = (token) => fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  let response = await send(getTokens()?.access)
+  if (response.status === 401) {
+    const access = await refreshAccess()
+    if (access) response = await send(access)
+  }
+  if (!response.ok) throw new ApiError(`Download failed (${response.status})`, response.status)
+  const url = URL.createObjectURL(await response.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || 'download'
+  a.click()
+  URL.revokeObjectURL(url)
+}

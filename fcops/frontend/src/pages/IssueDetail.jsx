@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { api, listOf } from '../lib/api'
+import { api, download, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
 import {
   Banner, Empty, FcLink, Field, Loading, SeverityTag, StatusTag, Tag, humanize, when,
@@ -12,6 +12,8 @@ export default function IssueDetail() {
   const { user } = useAuth()
   const [issue, setIssue] = useState(null)
   const [departments, setDepartments] = useState([])
+  const [users, setUsers] = useState([])
+  const [participantForm, setParticipantForm] = useState({ user: '', role: 'verifier' })
   const [similar, setSimilar] = useState(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -33,6 +35,7 @@ export default function IssueDetail() {
   useEffect(() => {
     reload().catch((e) => setError(e.message))
     api('/api/departments/', { params: { page_size: 100 } }).then((d) => setDepartments(listOf(d)))
+    api('/api/users/', { params: { page_size: 200, is_active: true } }).then((d) => setUsers(listOf(d)))
     api(`/api/issues/${id}/similar/`).then(setSimilar).catch(() => {})
   }, [id, reload])
 
@@ -208,6 +211,37 @@ export default function IssueDetail() {
           </div>
 
           <div className="card">
+            <h2>Participants</h2>
+            <p className="small muted">Verifiers and collaborators can open this issue even outside its department.</p>
+            {issue.participants.length === 0 ? <Empty>None yet.</Empty> : null}
+            {issue.participants.map((p) => (
+              <div key={p.id} className="small">{p.user_name} · {humanize(p.role)}</div>
+            ))}
+            {issue.status !== 'CLOSED' ? (
+              <div className="row" style={{ marginTop: 8 }}>
+                <select aria-label="Participant" value={participantForm.user}
+                        onChange={(e) => setParticipantForm((f) => ({ ...f, user: e.target.value }))}>
+                  <option value="">— person —</option>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
+                </select>
+                <select aria-label="Participant role" value={participantForm.role}
+                        onChange={(e) => setParticipantForm((f) => ({ ...f, role: e.target.value }))}>
+                  <option value="verifier">Verifier</option>
+                  <option value="collaborator">Collaborator</option>
+                </select>
+                <button className="secondary" disabled={busy || !participantForm.user}
+                        onClick={() => run(async () => {
+                          await api(`/api/issues/${id}/participants/`, {
+                            method: 'POST',
+                            body: { user: Number(participantForm.user), role: participantForm.role },
+                          })
+                          setParticipantForm({ user: '', role: 'verifier' })
+                        })}>Add</button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="card">
             <h2>Versions at discovery</h2>
             <dl className="kv">
               <dt>Hardware</dt><dd className="mono">{issue.hardware_revision || '—'}</dd>
@@ -309,7 +343,7 @@ function Attachments({ issue, onDone }) {
       {issue.attachments.length === 0 ? <Empty>No photos, logs or captures yet.</Empty> : null}
       {issue.attachments.map((a) => (
         <div key={a.id} className="note">
-          <a href={a.url} target="_blank" rel="noreferrer">{a.original_name || 'file'}</a>
+          <a href={a.url} onClick={(e) => { e.preventDefault(); download(a.url, a.original_name).catch((err) => setError(err.message)) }}>{a.original_name || 'file'}</a>
           <div className="meta">
             {Math.round((a.size || 0) / 1024)} kB · {a.uploaded_by_name} · {when(a.created_at)}
           </div>

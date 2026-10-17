@@ -65,11 +65,18 @@ class AuditLogEntry(models.Model):
 
 
 class Notification(models.Model):
+    """A pointer to something that happened, never a copy of its content.
+
+    The text is rendered when read, from the target, and only if the
+    recipient can still see the target (WP1). That way a notification cannot
+    leak a title after access is lost.
+    """
+
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                   related_name="notifications")
-    verb = models.CharField(max_length=64)
-    message = models.CharField(max_length=500)
-    link = models.CharField(max_length=255, blank=True)
+    kind = models.CharField(max_length=64)
+    target_type = models.CharField(max_length=32)
+    target_id = models.PositiveBigIntegerField()
     read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
@@ -77,4 +84,4 @@ class Notification(models.Model):
         ordering = ("-created_at",)
 
     def __str__(self):
-        return f"{self.recipient_id}: {self.verb}"
+        return f"{self.recipient_id}: {self.kind}"

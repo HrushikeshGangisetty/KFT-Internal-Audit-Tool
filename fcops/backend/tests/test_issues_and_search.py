@@ -9,7 +9,13 @@ from fc.lifecycle import Stage
 from fc.models import FirmwareRecord
 from issues import services as issvc
 from issues.models import Category, Issue, IssueStatus, KnownIssue, Severity
-from issues.search import find_similar, search_issues
+from issues.search import find_similar as _find_similar, search_issues
+
+
+def find_similar(**kwargs):
+    # Unscoped: these tests exercise ranking; scoping is in test_access_matrix.
+    return _find_similar(issues=Issue.objects.all(),
+                         known_issues=KnownIssue.objects.all(), **kwargs)
 
 from .factories import make_department, make_fc_model, make_user
 

@@ -64,6 +64,18 @@ class KnownIssue(TimeStampedModel):
                                           related_name="known_issues")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES,
                               default=STATUS_ACTIVE)
+    # Who may read the article itself (WP1). Occurrence links and counts are
+    # still filtered per reader by their issue scope.
+    AUDIENCE_ALL_STAFF = "all_staff"
+    AUDIENCE_DEPARTMENTS = "departments"
+    AUDIENCE_HEADS = "heads"
+    AUDIENCE_CHOICES = [(AUDIENCE_ALL_STAFF, "All staff"),
+                        (AUDIENCE_DEPARTMENTS, "Selected departments"),
+                        (AUDIENCE_HEADS, "Heads and managers")]
+    audience = models.CharField(max_length=16, choices=AUDIENCE_CHOICES,
+                                default=AUDIENCE_HEADS)
+    audience_departments = models.ManyToManyField(Department, blank=True,
+                                                  related_name="+")
     promoted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
                                     on_delete=models.SET_NULL,
                                     related_name="promoted_known_issues")
@@ -271,3 +283,31 @@ class IssueAttachment(models.Model):
 
     class Meta:
         ordering = ("-created_at",)
+
+
+class IssueParticipant(models.Model):
+    """A person explicitly involved in an issue outside its department scope
+    (WP1): a collaborator or an assigned verifier. Removal sets
+    ``removed_at``; the row is kept as history."""
+
+    ROLE_COLLABORATOR = "collaborator"
+    ROLE_VERIFIER = "verifier"
+    ROLE_CHOICES = [(ROLE_COLLABORATOR, "Collaborator"), (ROLE_VERIFIER, "Verifier")]
+
+    issue = models.ForeignKey(Issue, on_delete=models.CASCADE,
+                              related_name="participants")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                             related_name="issue_participations")
+    role = models.CharField(max_length=16, choices=ROLE_CHOICES)
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                 on_delete=models.SET_NULL, related_name="+")
+    added_at = models.DateTimeField(auto_now_add=True)
+    removed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("added_at", "id")
+        constraints = [
+            models.UniqueConstraint(fields=["issue", "user", "role"],
+                                    condition=models.Q(removed_at__isnull=True),
+                                    name="one_active_participation_per_role"),
+        ]

@@ -1,4 +1,4 @@
-from django.db.models import Avg, Count, F, Q
+from django.db.models import Count, Prefetch
 from django.utils import timezone
 from datetime import timedelta
 
@@ -8,29 +8,32 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.permissions import IsManager
+from access import policy
+from access.mixins import ScopedViewSetMixin
 from fc.lifecycle import STAGE_ORDER, Stage
-from fc.models import FlightController, FCStatus, ReworkRecord, StageRecord
+from fc.models import FCStatus, ReworkRecord
 
-from .models import AuditLogEntry, Notification
 from .serializers import AuditLogEntrySerializer, NotificationSerializer
 
 
-class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+class AuditLogViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     """Append-only: read endpoints only, no create/update/delete route exists."""
-    queryset = AuditLogEntry.objects.select_related("actor", "fc").all()
     serializer_class = AuditLogEntrySerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ("entity_type", "entity_id", "action", "actor", "fc")
     ordering_fields = ("created_at",)
 
+    def get_scoped_queryset(self):
+        return policy.visible_audit_entries(self.request.user).select_related(
+            "actor", "fc")
 
-class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+
+class NotificationViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        return Notification.objects.filter(recipient=self.request.user)
+    def get_scoped_queryset(self):
+        return policy.visible_notifications(self.request.user)
 
     @action(detail=False, methods=["get"])
     def unread_count(self, request):
@@ -46,30 +49,39 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         obj = self.get_object()
         obj.read_at = obj.read_at or timezone.now()
         obj.save(update_fields=["read_at"])
-        return Response(NotificationSerializer(obj).data)
+        return Response(self.get_serializer(obj).data)
 
 
 class DashboardSummaryView(APIView):
-    """Manager dashboard aggregate (PRD §22)."""
+    """Manager dashboard aggregate (PRD §22).
+
+    Every figure is computed from the caller's scoped querysets, so counts
+    never include records the caller cannot open. Nothing is cached (WP1
+    decision): a shared cache would have to be keyed per user and access
+    version.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        from issues.models import Issue, IssueStatus, Severity
+        from issues.models import IssueStatus
 
+        user = request.user
+        fcs = policy.visible_fcs(user)
+        issues = policy.visible_issues(user)
         window_days = int(request.query_params.get("window_days", 90))
         since = timezone.now() - timedelta(days=window_days)
 
         by_stage = {s: 0 for s in STAGE_ORDER}
-        for row in (FlightController.objects
+        for row in (fcs
                     .exclude(status__in=[FCStatus.APPROVED, FCStatus.REJECTED])
                     .values("current_stage").annotate(n=Count("id"))):
             by_stage[row["current_stage"]] = row["n"]
 
         by_status = {row["status"]: row["n"] for row in
-                     FlightController.objects.values("status").annotate(n=Count("id"))}
+                     fcs.values("status").annotate(n=Count("id"))}
 
-        blocked = (FlightController.objects.filter(status=FCStatus.BLOCKED)
-                   .prefetch_related("issues")[:50])
+        blocked = (fcs.filter(status=FCStatus.BLOCKED)
+                   .prefetch_related(Prefetch("issues", queryset=issues))[:50])
         blocked_rows = []
         for fc in blocked:
             open_issues = [i for i in fc.issues.all()
@@ -82,7 +94,7 @@ class DashboardSummaryView(APIView):
                            for i in open_issues],
             })
 
-        open_issue_qs = Issue.objects.exclude(status=IssueStatus.CLOSED)
+        open_issue_qs = issues.exclude(status=IssueStatus.CLOSED)
         issues_by_department = list(
             open_issue_qs.values("assigned_department__name")
             .annotate(n=Count("id")).order_by("-n"))
@@ -91,18 +103,18 @@ class DashboardSummaryView(APIView):
         issues_by_category = list(
             open_issue_qs.values("category").annotate(n=Count("id")).order_by())
         issues_by_discovery_stage = list(
-            Issue.objects.filter(created_at__gte=since)
+            issues.filter(created_at__gte=since)
             .values("discovered_stage").annotate(n=Count("id")).order_by("-n"))
 
         resolution_times = []
-        for issue in Issue.objects.filter(resolved_at__isnull=False,
+        for issue in issues.filter(resolved_at__isnull=False,
                                           created_at__gte=since):
             resolution_times.append((issue.resolved_at - issue.created_at).total_seconds())
         avg_resolution_hours = (round(sum(resolution_times) / len(resolution_times) / 3600, 1)
                                 if resolution_times else None)
 
         stage_durations = {}
-        for rec in StageRecord.objects.filter(completed_at__isnull=False,
+        for rec in policy.visible_stage_records(user).filter(completed_at__isnull=False,
                                               started_at__isnull=False,
                                               completed_at__gte=since):
             stage_durations.setdefault(rec.stage, []).append(
@@ -112,7 +124,7 @@ class DashboardSummaryView(APIView):
              "avg_hours": round(sum(v) / len(v) / 3600, 2)}
             for s, v in stage_durations.items()]
 
-        rework_counts = (ReworkRecord.objects.filter(created_at__gte=since)
+        rework_counts = (policy.scope_by_fc(user, ReworkRecord.objects.all()).filter(created_at__gte=since)
                          .values("fc__serial").annotate(n=Count("id")).order_by("-n")[:10])
 
         return Response({
@@ -120,7 +132,7 @@ class DashboardSummaryView(APIView):
             "fc_by_stage": [{"stage": s, "label": Stage(s).label, "count": by_stage[s]}
                             for s in STAGE_ORDER],
             "fc_by_status": by_status,
-            "fc_total": FlightController.objects.count(),
+            "fc_total": fcs.count(),
             "blocked": blocked_rows,
             "open_issue_total": open_issue_qs.count(),
             "issues_by_department": issues_by_department,

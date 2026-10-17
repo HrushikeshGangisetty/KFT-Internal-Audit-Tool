@@ -1,4 +1,5 @@
 from accounts.models import Department, Role, User
+from accounts.services import sync_legacy_fields
 from fc.models import FCModelType
 
 
@@ -14,6 +15,8 @@ def make_user(username, role=Role.TECHNICIAN, department=None, password="TestPas
     if role == Role.ADMIN:
         user.is_staff = user.is_superuser = True
     user.save()
+    # Same memberships/grants the user admin API would derive (WP1).
+    sync_legacy_fields(user, actor=None)
     return user
 
 

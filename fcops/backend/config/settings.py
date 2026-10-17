@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "core",
     "fc",
     "issues",
+    "access",
 ]
 
 MIDDLEWARE = [
@@ -156,6 +157,12 @@ CSRF_TRUSTED_ORIGINS = [o for o in env("CSRF_TRUSTED_ORIGINS", "http://localhost
 # Require verification (by a different user than the resolver) before an issue
 # can be closed / before manager approval is allowed.
 REQUIRE_INDEPENDENT_VERIFICATION = env_bool("REQUIRE_INDEPENDENT_VERIFICATION", True)
+
+# PLACEHOLDER until the FC access matrix is agreed (PRD §5): members of these
+# department kinds read every FC record; heads and managers always do.
+FC_VISIBLE_DEPARTMENT_KINDS = [k.strip() for k in env(
+    "FC_VISIBLE_DEPARTMENT_KINDS",
+    "HARDWARE,FIRMWARE,SOFTWARE,MECHANICAL,TESTING,QUALITY,SERVICE").split(",") if k.strip()]
 # Allow manager approval with a mandatory justification even when non-blocking
 # issues remain unverified.
 ALLOW_MANAGER_DEVIATION = env_bool("ALLOW_MANAGER_DEVIATION", True)

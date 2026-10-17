@@ -1,17 +1,21 @@
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from access import policy
+from access.mixins import ScopedViewSetMixin
 from accounts.models import Department, User
 from accounts.permissions import CanWriteIssues, IsLeadOrAbove, IsManager
 from core import audit
 from core.exceptions import WorkflowError
 from core.models import AuditLogEntry
-from fc.models import FlightController, StageRecord
+from fc.models import StageRecord
 
 from . import services
 from .models import (Category, Issue, IssueAttachment, IssueStatus, KnownIssue,
@@ -20,14 +24,11 @@ from .search import find_similar, search_issues, search_known_issues
 from .serializers import (InvestigationNoteSerializer, IssueAttachmentSerializer,
                           IssueCreateSerializer, IssueDetailSerializer,
                           IssueListSerializer, KnownIssueSerializer,
-                          ReassignSerializer, SimilarQuerySerializer,
+                          ParticipantAddSerializer, ReassignSerializer, SimilarQuerySerializer,
                           StatusChangeSerializer)
 
 
-class IssueViewSet(viewsets.ModelViewSet):
-    queryset = (Issue.objects.select_related(
-        "fc", "discovered_by", "discovering_department", "assigned_department",
-        "assigned_person", "root_cause_department", "known_issue").all())
+class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [CanWriteIssues]
     filterset_fields = ("fc", "status", "severity", "category", "discovered_stage",
                         "assigned_department", "discovering_department",
@@ -41,7 +42,14 @@ class IssueViewSet(viewsets.ModelViewSet):
             return IssueCreateSerializer
         return IssueDetailSerializer
 
+    def get_scoped_queryset(self):
+        return policy.visible_issues(self.request.user).select_related(
+            "fc", "discovered_by", "discovering_department", "assigned_department",
+            "assigned_person", "root_cause_department", "known_issue")
+
     def get_queryset(self):
+        # Scope first, then search: a hidden match can neither take a ranked
+        # slot nor appear in a count.
         qs = super().get_queryset()
         params = self.request.query_params
         text = params.get("q") or params.get("search")
@@ -57,7 +65,7 @@ class IssueViewSet(viewsets.ModelViewSet):
         s = IssueCreateSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         data = s.validated_data
-        fc = get_object_or_404(FlightController, pk=data["fc"])
+        fc = get_object_or_404(policy.visible_fcs(request.user), pk=data["fc"])
         stage_record = None
         if data.get("discovered_stage_record"):
             stage_record = StageRecord.objects.filter(
@@ -83,8 +91,9 @@ class IssueViewSet(viewsets.ModelViewSet):
                 "parameter_profile": data.get("parameter_profile"),
             },
             actor=request.user)
-        return Response(IssueDetailSerializer(issue).data,
-                        status=http_status.HTTP_201_CREATED)
+        return Response(IssueDetailSerializer(
+            issue, context=self.get_serializer_context()).data,
+            status=http_status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         issue = self.get_object()
@@ -126,7 +135,7 @@ class IssueViewSet(viewsets.ModelViewSet):
             to_person=User.objects.filter(
                 pk=s.validated_data.get("to_person")).first(),
             reason=s.validated_data["reason"])
-        return Response(IssueDetailSerializer(issue).data)
+        return Response(self.get_serializer(issue).data)
 
     @action(detail=True, methods=["post"], url_path="status")
     def change_status(self, request, pk=None):
@@ -140,14 +149,14 @@ class IssueViewSet(viewsets.ModelViewSet):
             root_cause_department=Department.objects.filter(
                 pk=d.get("root_cause_department")).first()
             if d.get("root_cause_department") else None)
-        return Response(IssueDetailSerializer(issue).data)
+        return Response(self.get_serializer(issue).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsManager])
     def reopen(self, request, pk=None):
         issue = self.get_object()
         issue = services.reopen(issue, actor=request.user,
                                 reason=request.data.get("reason", ""))
-        return Response(IssueDetailSerializer(issue).data)
+        return Response(self.get_serializer(issue).data)
 
     @action(detail=True, methods=["post"])
     def waiting(self, request, pk=None):
@@ -155,7 +164,7 @@ class IssueViewSet(viewsets.ModelViewSet):
         issue = services.set_waiting(issue, actor=request.user,
                                      waiting=bool(request.data.get("waiting")),
                                      reason=request.data.get("reason", ""))
-        return Response(IssueDetailSerializer(issue).data)
+        return Response(self.get_serializer(issue).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsLeadOrAbove])
     def promote(self, request, pk=None):
@@ -169,21 +178,57 @@ class IssueViewSet(viewsets.ModelViewSet):
             affected_revisions=request.data.get("affected_revisions"),
             affected_firmware=request.data.get("affected_firmware"),
             affected_software=request.data.get("affected_software"))
-        return Response(KnownIssueSerializer(known).data,
-                        status=http_status.HTTP_201_CREATED)
+        return Response(KnownIssueSerializer(
+            known, context=self.get_serializer_context()).data,
+            status=http_status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="link-known-issue")
     def link_known_issue(self, request, pk=None):
         issue = self.get_object()
-        known = get_object_or_404(KnownIssue, pk=request.data.get("known_issue"))
+        known = get_object_or_404(policy.visible_knowledge(request.user),
+                                  pk=request.data.get("known_issue"))
         issue = services.link_issue_to_known(issue, known, actor=request.user,
                                              reason=request.data.get("reason", ""))
-        return Response(IssueDetailSerializer(issue).data)
+        return Response(self.get_serializer(issue).data)
+
+    @action(detail=True, methods=["post"])
+    def participants(self, request, pk=None):
+        """Add a collaborator or verifier. PLACEHOLDER rule until WP5/WP7:
+        heads, managers and the issue's assigned person may add."""
+        issue = self.get_object()
+        if not (policy.is_head_or_manager(request.user)
+                or issue.assigned_person_id == request.user.pk):
+            raise PermissionDenied("Only a head, a manager or the assigned person "
+                                   "may add participants.")
+        s = ParticipantAddSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        services.add_participant(
+            issue, user=get_object_or_404(User, pk=s.validated_data["user"],
+                                          is_active=True),
+            role=s.validated_data["role"], actor=request.user)
+        return Response(self.get_serializer(issue).data,
+                        status=http_status.HTTP_201_CREATED)
+
+    def _similar(self, **kwargs):
+        user = self.request.user
+        scored, known = find_similar(
+            issues=policy.visible_issues(user).select_related(
+                "fc", "assigned_department", "discovering_department", "known_issue"),
+            known_issues=policy.visible_knowledge(user), **kwargs)
+        context = self.get_serializer_context()
+        return Response({
+            "similar_issues": [
+                {"score": round(score, 4), "matched_on": matched,
+                 **IssueListSerializer(issue, context=context).data}
+                for score, matched, issue in scored],
+            "known_issues": KnownIssueSerializer(known, many=True,
+                                                 context=context).data,
+        })
 
     @action(detail=True, methods=["get"])
     def similar(self, request, pk=None):
         issue = self.get_object()
-        scored, known = find_similar(
+        return self._similar(
             text=f"{issue.title} {issue.symptoms}",
             stage=issue.discovered_stage, category=issue.category,
             hardware_revision=issue.hardware_revision,
@@ -192,7 +237,6 @@ class IssueViewSet(viewsets.ModelViewSet):
             configurator_version=issue.configurator_version,
             parameter_profile=issue.parameter_profile,
             exclude_issue_id=issue.pk)
-        return Response(_similar_payload(scored, known))
 
     @action(detail=False, methods=["get", "post"], url_path="similar-search")
     def similar_search(self, request):
@@ -200,7 +244,7 @@ class IssueViewSet(viewsets.ModelViewSet):
         s = SimilarQuerySerializer(data=payload)
         s.is_valid(raise_exception=True)
         d = s.validated_data
-        scored, known = find_similar(
+        return self._similar(
             text=d.get("text", ""), stage=d.get("stage") or None,
             category=d.get("category") or None,
             hardware_revision=d.get("hardware_revision") or None,
@@ -210,12 +254,11 @@ class IssueViewSet(viewsets.ModelViewSet):
             parameter_profile=d.get("parameter_profile") or None,
             exclude_issue_id=d.get("exclude_issue_id"),
             limit=d.get("limit", 10))
-        return Response(_similar_payload(scored, known))
 
     @action(detail=False, methods=["get"])
     def search(self, request):
         params = request.query_params
-        qs = search_issues(self.queryset, text=params.get("q"),
+        qs = search_issues(self.get_scoped_queryset(), text=params.get("q"),
                            filters={k: params.get(k) for k in params.keys()})
         page = self.paginate_queryset(qs)
         data = IssueListSerializer(page if page is not None else qs, many=True).data
@@ -230,19 +273,7 @@ class IssueViewSet(viewsets.ModelViewSet):
         })
 
 
-def _similar_payload(scored, known):
-    return {
-        "similar_issues": [
-            {"score": round(score, 4), "matched_on": matched,
-             **IssueListSerializer(issue).data}
-            for score, matched, issue in scored],
-        "known_issues": KnownIssueSerializer(known, many=True).data,
-    }
-
-
-class KnownIssueViewSet(viewsets.ModelViewSet):
-    queryset = KnownIssue.objects.select_related("promoted_by",
-                                                 "owning_department").all()
+class KnownIssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = KnownIssueSerializer
     filterset_fields = ("category", "status", "owning_department")
 
@@ -250,6 +281,10 @@ class KnownIssueViewSet(viewsets.ModelViewSet):
         if self.request.method in ("GET", "HEAD", "OPTIONS"):
             return [IsAuthenticated()]
         return [IsLeadOrAbove()]
+
+    def get_scoped_queryset(self):
+        return policy.visible_knowledge(self.request.user).select_related(
+            "promoted_by", "owning_department")
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -270,15 +305,29 @@ class KnownIssueViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def occurrences(self, request, pk=None):
         known = self.get_object()
-        return Response(IssueListSerializer(known.linked_issues.all(), many=True).data)
+        qs = policy.visible_issues(request.user).filter(known_issue=known)
+        return Response(IssueListSerializer(qs, many=True).data)
 
 
-class IssueAttachmentViewSet(viewsets.ModelViewSet):
-    queryset = IssueAttachment.objects.select_related("issue", "uploaded_by").all()
+class IssueAttachmentViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = IssueAttachmentSerializer
     permission_classes = [CanWriteIssues]
     parser_classes = [MultiPartParser, FormParser]
     filterset_fields = ("issue",)
+
+    def get_scoped_queryset(self):
+        return policy.visible_attachments(self.request.user).select_related(
+            "issue", "uploaded_by")
+
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """Stream the file after a scope check through the parent issue; an
+        attachment outside scope is a 404 like any other record."""
+        attachment = self.get_object()
+        response = FileResponse(attachment.file.open("rb"), as_attachment=True,
+                                filename=attachment.original_name or None)
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
     def perform_create(self, serializer):
         upload = self.request.FILES.get("file")

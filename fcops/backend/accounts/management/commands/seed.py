@@ -6,6 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from accounts.models import Department, Role, User
+from accounts.services import sync_legacy_fields
 from fc.lifecycle import Stage
 from fc.models import (ChecklistTemplate, FCModelType, ParameterProfile,
                        SoftwareVersion)
@@ -100,6 +101,7 @@ class Command(BaseCommand):
                     user.is_staff = True
                     user.is_superuser = True
                 user.save()
+                sync_legacy_fields(user, actor=None)
 
         models = {}
         for name, code in [("KFT-FC-V4", "kft-fc-v4"), ("KFT-FC-MINI", "kft-fc-mini")]:
@@ -133,7 +135,7 @@ class Command(BaseCommand):
         from fc import services as fcsvc
         from fc.models import FirmwareRecord, StageStatus
         from issues import services as issvc
-        from issues.models import Category, IssueStatus, Severity
+        from issues.models import Category, IssueStatus, KnownIssue, Severity
 
         admin = User.objects.get(username="admin")
         tech = User.objects.get(username="hw.tech1")
@@ -227,7 +229,11 @@ class Command(BaseCommand):
             issvc.change_status(issue, IssueStatus.VERIFIED, actor=test2,
                                 note="Re-tested, symptom gone.")
             issvc.change_status(issue, IssueStatus.CLOSED, actor=test2)
-            issvc.promote_to_known_issue(issue, actor=fwlead)
+            known = issvc.promote_to_known_issue(issue, actor=fwlead)
+            # Demo knowledge is shared with all staff; new articles default
+            # to heads-only until their author widens the audience (WP1).
+            known.audience = KnownIssue.AUDIENCE_ALL_STAFF
+            known.save(update_fields=["audience"])
 
         # Two FCs mid-production, one blocked.
         for _ in range(3):

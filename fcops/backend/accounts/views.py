@@ -5,10 +5,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from access.mixins import ScopedViewSetMixin
 from core import audit
 from core.models import AuditLogEntry
 
 from .models import Department, Role
+from . import services
 from .permissions import IsAdmin
 from .serializers import (DepartmentSerializer, MeSerializer, UserSerializer,
                           UserWriteSerializer)
@@ -27,10 +29,13 @@ class AuditedTokenObtainPairView(TokenObtainPairView):
         return response
 
 
-class DepartmentViewSet(viewsets.ModelViewSet):
-    queryset = Department.objects.all()
+class DepartmentViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = DepartmentSerializer
     filterset_fields = ("kind", "is_active")
+
+    def get_scoped_queryset(self):
+        # The org chart is a directory every member of staff needs.
+        return Department.objects.all()
 
     def get_permissions(self):
         if self.request.method in ("GET", "HEAD", "OPTIONS"):
@@ -49,9 +54,12 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                             note="Department updated")
 
 
-class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.select_related("department").all().order_by("username")
+class UserViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     filterset_fields = ("role", "department", "is_active")
+
+    def get_scoped_queryset(self):
+        # Staff directory: needed to assign, hand off and mention people.
+        return User.objects.select_related("department").all().order_by("username")
 
     def get_serializer_class(self):
         if self.request.method in ("GET", "HEAD", "OPTIONS"):
@@ -69,11 +77,15 @@ class UserViewSet(viewsets.ModelViewSet):
                      after=audit.snapshot(obj, fields=["username", "role",
                                                        "department", "is_active"]),
                      note="User created")
+        services.sync_legacy_fields(obj, actor=self.request.user)
 
     def perform_update(self, serializer):
         before = audit.snapshot(serializer.instance,
                                 fields=["username", "role", "department", "is_active"])
+        old_department, old_role = serializer.instance.department, serializer.instance.role
         obj = serializer.save()
+        services.sync_legacy_fields(obj, actor=self.request.user,
+                                    old_department=old_department, old_role=old_role)
         audit.record_change(obj, AuditLogEntry.ACTION_PERMISSION, before,
                             fields=["username", "role", "department", "is_active"],
                             note="User updated")
