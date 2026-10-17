@@ -1,6 +1,8 @@
 # WP0 — Baseline, inventory, and preservation
 Agent: Codex    Branch: wp/00-baseline    Date: 17 October 2026
 
+Draft review: [PR #1](https://github.com/HrushikeshGangisetty/KFT-Internal-Audit-Tool/pull/1). Awaiting Claude Code cross-review; not merged.
+
 ## Done
 
 - Preserved all 24 initial modified/untracked paths as-is in commit `900680d1efcaca988cc511a21064502b7945bb25`, pushed to `preserve/local-work-2026-10-17`. Verified exact path-set equality and every original SHA-256 against committed blobs and unchanged original files. Existing `.env` excluded. `fcops.tar.gz` included as found, never regenerated.
