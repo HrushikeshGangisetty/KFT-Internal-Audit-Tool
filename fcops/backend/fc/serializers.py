@@ -5,8 +5,8 @@ from accounts.serializers import DepartmentSerializer, UserSerializer
 from .lifecycle import ALLOWED_REWORK_TARGETS, STAGE_ORDER, Stage, rework_targets
 from .models import (ChecklistItem, ChecklistTemplate, FCEvent, FCModelType,
                      FirmwareBuild, FirmwareRecord, FlightController,
-                     ParameterProfile, ReworkRecord, SoftwareUpdate,
-                     SoftwareVersion, StageRecord, TestResult)
+                     ParameterFile, ParameterProfile, ReworkRecord,
+                     SoftwareUpdate, SoftwareVersion, StageRecord, TestResult)
 
 
 class FCModelTypeSerializer(serializers.ModelSerializer):
@@ -146,7 +146,9 @@ class FlightControllerListSerializer(serializers.ModelSerializer):
         return Stage(obj.current_stage).label
 
     def get_open_issue_count(self, obj):
-        return obj.open_issues.count()
+        # Annotated by the viewset so a list of N FCs costs one query, not N.
+        annotated = getattr(obj, "open_issue_total", None)
+        return annotated if annotated is not None else obj.open_issues.count()
 
 
 class FlightControllerDetailSerializer(FlightControllerListSerializer):
@@ -158,33 +160,62 @@ class FlightControllerDetailSerializer(FlightControllerListSerializer):
                                              read_only=True, default="")
     approval_blockers = serializers.SerializerMethodField()
     stage_blockers = serializers.SerializerMethodField()
+    return_options = serializers.SerializerMethodField()
 
     class Meta(FlightControllerListSerializer.Meta):
         fields = FlightControllerListSerializer.Meta.fields + (
             "notes", "stage_progress", "current_firmware", "registered_by_name",
             "approved_by_name", "approved_at", "approval_note", "approval_blockers",
-            "stage_blockers")
+            "stage_blockers", "return_options")
+
+    # The FC detail payload is the most-requested read in the product, and every
+    # query on it is a round trip to a hosted database. These helpers read from
+    # prefetched collections so the whole payload costs a fixed handful of
+    # queries regardless of how many stages, issues or flashes an FC has.
+    def _records(self, obj):
+        if not hasattr(obj, "_cached_records"):
+            obj._cached_records = list(obj.stage_records.all())
+        return obj._cached_records
+
+    def _issues(self, obj):
+        if not hasattr(obj, "_cached_issues"):
+            obj._cached_issues = list(obj.issues.all())
+        return obj._cached_issues
 
     def get_stage_progress(self, obj):
-        rows = obj.stage_progress()
+        rows = obj.stage_progress(records=self._records(obj))
         for row in rows:
             row["stage"] = str(row["stage"])
         return rows
 
     def get_current_firmware(self, obj):
-        fw = obj.firmware_records.filter(is_current=True).first()
-        return FirmwareRecordSerializer(fw).data if fw else None
+        current = [f for f in obj.firmware_records.all() if f.is_current]
+        return FirmwareRecordSerializer(current[0]).data if current else None
 
     def get_approval_blockers(self, obj):
         from .services import approval_blockers
-        blockers, warnings = approval_blockers(obj)
+        blockers, warnings = approval_blockers(obj, records=self._records(obj),
+                                               issues=self._issues(obj))
         return {"blockers": blockers, "warnings": warnings}
 
     def get_stage_blockers(self, obj):
         """Why the *current* stage cannot be passed — shown before the user
         clicks, not only after the attempt fails."""
         from .services import stage_blockers
-        return stage_blockers(obj)
+        return stage_blockers(obj, all_issues=self._issues(obj))
+
+    def get_return_options(self, obj):
+        """Earlier stages this failure can be routed back to.
+
+        Standard routes are the ones that come up routinely; the rest are
+        reachable but flagged, because a defect found late can originate
+        anywhere upstream and pretending otherwise just pushes people to lie
+        about where the fault was.
+        """
+        from .lifecycle import earlier_stages, is_standard_rework
+        return [{"value": str(stage), "label": Stage(stage).label,
+                 "standard": is_standard_rework(obj.current_stage, stage)}
+                for stage in earlier_stages(obj.current_stage)]
 
 
 class FCCreateSerializer(serializers.Serializer):
@@ -200,6 +231,12 @@ class StageActionSerializer(serializers.Serializer):
     stage = serializers.ChoiceField(choices=Stage.choices, required=False)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
     department = serializers.IntegerField(required=False, allow_null=True)
+    # On a failure the operator can name the earlier stage responsible; the FC
+    # is returned there in the same action.
+    return_to_stage = serializers.ChoiceField(choices=Stage.choices,
+                                              required=False, allow_null=True)
+    return_reason = serializers.CharField(required=False, allow_blank=True,
+                                          default="")
 
 
 class ApprovalSerializer(serializers.Serializer):
@@ -311,3 +348,29 @@ class FlashBuildSerializer(serializers.Serializer):
     config_result = serializers.ChoiceField(
         choices=FirmwareRecord.RESULT_CHOICES, default=FirmwareRecord.RESULT_SUCCESS)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class ParameterFileSerializer(serializers.ModelSerializer):
+    uploaded_by_name = serializers.CharField(source="uploaded_by.full_name",
+                                             read_only=True, default="")
+    fc_serial = serializers.CharField(source="fc.serial", read_only=True, default="")
+
+    class Meta:
+        model = ParameterFile
+        fields = ("id", "name", "label", "fc", "fc_serial", "firmware_record",
+                  "parameter_profile", "parameter_count", "uploaded_by",
+                  "uploaded_by_name", "created_at")
+        read_only_fields = ("uploaded_by", "parameter_count", "name")
+
+
+class ParameterCompareSerializer(serializers.Serializer):
+    """Compare two stored dumps, two uploads, or one of each."""
+    left = serializers.IntegerField(required=False, allow_null=True)
+    right = serializers.IntegerField(required=False, allow_null=True)
+    tolerance = serializers.FloatField(required=False, default=0.0)
+
+    def validate_tolerance(self, value):
+        if value < 0 or value > 1:
+            raise serializers.ValidationError(
+                "Tolerance is a relative fraction between 0 and 1.")
+        return value

@@ -11,7 +11,8 @@ from core.exceptions import WorkflowError
 from core.models import AuditLogEntry
 
 from .lifecycle import (ALLOWED_REWORK_TARGETS, STAGE_INDEX, STAGE_ORDER, Stage,
-                        is_allowed_rework, next_stage)
+                        earlier_stages, is_allowed_rework, is_standard_rework,
+                        next_stage)
 from .models import (FCStatus, FlightController, FCEvent, ReworkRecord,
                      StageRecord, StageStatus)
 
@@ -96,7 +97,7 @@ def start_stage(fc, stage=None, *, actor=None, department=None, notes=""):
     return record
 
 
-def stage_blockers(fc, stage=None):
+def stage_blockers(fc, stage=None, all_issues=None):
     """Why this stage cannot be marked PASSED yet, in plain language.
 
     A *resolved* issue still blocks: resolving records what was wrong and how it
@@ -108,10 +109,17 @@ def stage_blockers(fc, stage=None):
 
     stage = stage or fc.current_stage
     reasons = []
-    issues = (fc.issues.filter(discovered_stage=stage)
-              .exclude(status__in=[IssueStatus.VERIFIED, IssueStatus.CLOSED])
-              .select_related("resolved_by"))
-    for issue in issues:
+    if all_issues is None:
+        candidates = list(fc.issues.filter(discovered_stage=stage)
+                          .exclude(status__in=[IssueStatus.VERIFIED,
+                                               IssueStatus.CLOSED])
+                          .select_related("resolved_by"))
+    else:
+        candidates = [i for i in all_issues
+                      if i.discovered_stage == stage
+                      and i.status not in (IssueStatus.VERIFIED,
+                                           IssueStatus.CLOSED)]
+    for issue in candidates:
         if issue.status == IssueStatus.RESOLVED:
             resolver = issue.resolved_by
             who = f" {resolver} resolved it, so someone else must verify it." \
@@ -127,7 +135,7 @@ def stage_blockers(fc, stage=None):
 
 @transaction.atomic
 def complete_stage(fc, stage=None, *, passed, actor=None, notes="",
-                   department=None):
+                   department=None, return_to_stage=None, return_reason=""):
     """Mark the current stage attempt PASSED or FAILED.
 
     Passing advances the FC to the next stage. Failing leaves the FC on the
@@ -174,6 +182,18 @@ def complete_stage(fc, stage=None, *, passed, actor=None, notes="",
         nxt = next_stage(stage)
         if nxt is not None:
             _move_fc_to_stage(fc, nxt, actor=actor, reason="Stage passed")
+    elif return_to_stage:
+        # The operator has identified which earlier stage is responsible, so the
+        # FC goes back there now rather than in a separate step. The rework
+        # record is left open: the work has been assigned, not yet done.
+        # No auto-generated description here: an exceptional route must be
+        # justified by a person, and a placeholder would satisfy that check
+        # without anyone having explained anything.
+        create_rework(stage_record=record,
+                      description=(return_reason or notes or "").strip(),
+                      return_to_stage=return_to_stage, actor=actor,
+                      department=department)
+        fc.refresh_from_db()
     fc.recompute_status()
     return record
 
@@ -202,24 +222,41 @@ def create_rework(*, stage_record, description, return_to_stage, actor=None,
     if stage_record.status != StageStatus.FAILED:
         raise WorkflowError("Rework can only be attached to a FAILED stage record.",
                             code="stage_not_failed")
-    if not is_allowed_rework(stage_record.stage, return_to_stage):
-        allowed = ", ".join(Stage(s).label for s in ALLOWED_REWORK_TARGETS.get(
-            stage_record.stage, [])) or "none"
+    if return_to_stage not in earlier_stages(stage_record.stage):
         raise WorkflowError(
-            f"{Stage(return_to_stage).label} is not an allowed rework target for a "
-            f"{Stage(stage_record.stage).label} failure. Allowed: {allowed}.",
-            code="rework_target_not_allowed")
+            f"{Stage(return_to_stage).label} does not come before "
+            f"{Stage(stage_record.stage).label}, so the FC cannot be returned to it.",
+            code="not_an_earlier_stage")
+
+    # A defect found late can originate anywhere upstream, so any earlier stage
+    # is reachable — but a route outside the standard list is an exception and
+    # is recorded as one.
+    standard = is_standard_rework(stage_record.stage, return_to_stage)
+    if not standard and not (description or "").strip():
+        raise WorkflowError(
+            f"Returning to {Stage(return_to_stage).label} is not a standard route "
+            f"after a {Stage(stage_record.stage).label} failure. Describe why "
+            f"this stage is responsible.", code="reason_required")
+    if not (description or "").strip():
+        # Standard routes are self-explanatory, so a description is optional
+        # there; the fallback records what happened rather than nothing.
+        description = (f"Returned to {Stage(return_to_stage).label} after "
+                       f"{Stage(stage_record.stage).label} failed")
+
     rework = ReworkRecord.objects.create(
         stage_record=stage_record, fc=fc, description=description,
         return_to_stage=return_to_stage, performed_by=actor,
         originating_issue=originating_issue,
         department=department or getattr(actor, "department", None))
+    route = "standard route" if standard else "EXCEPTIONAL route"
     audit.record(rework, AuditLogEntry.ACTION_CREATE, actor=actor,
                  after=audit.snapshot(rework),
-                 note=f"Rework opened from {Stage(stage_record.stage).label}", fc=fc)
+                 note=f"Rework opened from {Stage(stage_record.stage).label} "
+                      f"→ {Stage(return_to_stage).label} ({route})", fc=fc)
     log_event(fc, "REWORK_OPENED",
-              f"Rework opened on {Stage(stage_record.stage).label} → returning to "
-              f"{Stage(return_to_stage).label}",
+              f"Returned to {Stage(return_to_stage).label} after "
+              f"{Stage(stage_record.stage).label} failed"
+              + ("" if standard else " (exceptional route)"),
               detail=description, stage=stage_record.stage, actor=actor,
               issue=originating_issue)
     _move_fc_to_stage(fc, return_to_stage, actor=actor,
@@ -252,18 +289,28 @@ def complete_rework(rework, *, outcome, outcome_notes="", actor=None):
     return rework
 
 
-def approval_blockers(fc):
-    """Why can't this FC be approved? (PRD §17)"""
-    from django.conf import settings
+def approval_blockers(fc, records=None, issues=None):
+    """Why can't this FC be approved? (PRD §17)
+
+    ``records`` and ``issues`` let a caller that has already prefetched them
+    pass them in; otherwise each stage would cost its own query.
+    """
     from issues.models import IssueStatus
     blockers, warnings = [], []
     if fc.current_stage != Stage.MANAGER_APPROVAL:
         blockers.append(f"FC is at {Stage(fc.current_stage).label}, not Manager Approval.")
+
+    if records is None:
+        records = list(fc.stage_records.all())
+    latest = {}
+    for record in sorted(records, key=lambda r: (r.attempt, r.id)):
+        latest[record.stage] = record
     for stage in STAGE_ORDER[:STAGE_INDEX[Stage.MANAGER_APPROVAL]]:
-        rec = current_stage_record(fc, stage)
+        rec = latest.get(stage)
         if rec is None or rec.status != StageStatus.PASSED:
             blockers.append(f"{Stage(stage).label} has not passed.")
-    for issue in fc.issues.all():
+
+    for issue in (fc.issues.all() if issues is None else issues):
         if issue.status in (IssueStatus.OPEN, IssueStatus.INVESTIGATING):
             blockers.append(f"{issue.key} is unresolved ({issue.get_status_display()}).")
         elif issue.status == IssueStatus.RESOLVED:

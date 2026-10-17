@@ -102,12 +102,20 @@ class FlightController(TimeStampedModel):
                 super().save(update_fields=["status", "updated_at"])
         return self.status
 
-    def stage_progress(self):
+    def stage_progress(self, records=None):
         """One row per lifecycle stage with its latest attempt — drives the
-        ✓ / ⚠ / ○ progress strip on the FC detail page."""
-        latest = {}
-        for record in self.stage_records.all().order_by("attempt", "id"):
+        ✓ / ⚠ / ○ progress strip on the FC detail page.
+
+        Everything is derived from a single pass over the stage records. Pass
+        ``records`` when the caller has already loaded them (a prefetch), so
+        rendering an FC costs no extra queries at all.
+        """
+        if records is None:
+            records = list(self.stage_records.all())
+        latest, attempts = {}, {}
+        for record in sorted(records, key=lambda r: (r.attempt, r.id)):
             latest[record.stage] = record
+            attempts[record.stage] = attempts.get(record.stage, 0) + 1
         rows = []
         for stage in STAGE_ORDER:
             record = latest.get(stage)
@@ -115,7 +123,7 @@ class FlightController(TimeStampedModel):
                 "stage": stage,
                 "label": Stage(stage).label,
                 "status": record.status if record else StageStatus.PENDING,
-                "attempts": self.stage_records.filter(stage=stage).count(),
+                "attempts": attempts.get(stage, 0),
                 "record_id": record.id if record else None,
                 "completed_at": record.completed_at if record else None,
             })
@@ -555,6 +563,42 @@ class TestResult(TimeStampedModel):
         items = self.checklist_results or []
         self.overall_passed = all(bool(i.get("passed")) for i in items) if items else self.overall_passed
         return self.overall_passed
+
+
+class ParameterFile(TimeStampedModel):
+    """An uploaded ArduPilot-style ``.param`` file.
+
+    Parameters are stored parsed, as ``{name: value}``, so two files can be
+    compared without re-reading the originals — and so a file attached to an FC
+    stays readable long after the upload. The raw text is kept too, because a
+    parameter dump is evidence and evidence should not be lossy.
+    """
+
+    name = models.CharField(max_length=160, help_text="Original file name")
+    label = models.CharField(max_length=160, blank=True,
+                             help_text="What this dump represents, e.g. "
+                                       "'FC-2026-00012 after bench test'")
+    fc = models.ForeignKey(FlightController, null=True, blank=True,
+                           on_delete=models.CASCADE,
+                           related_name="parameter_files")
+    firmware_record = models.ForeignKey(FirmwareRecord, null=True, blank=True,
+                                        on_delete=models.SET_NULL,
+                                        related_name="parameter_files")
+    parameter_profile = models.ForeignKey(ParameterProfile, null=True, blank=True,
+                                          on_delete=models.SET_NULL,
+                                          related_name="parameter_files")
+    parameters = models.JSONField(default=dict, help_text='{"ANGLE_MAX": 3000}')
+    raw_text = models.TextField(blank=True)
+    parameter_count = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                    on_delete=models.SET_NULL,
+                                    related_name="parameter_files")
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return self.label or self.name
 
 
 class FCEvent(models.Model):

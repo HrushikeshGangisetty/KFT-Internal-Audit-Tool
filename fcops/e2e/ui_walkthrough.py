@@ -97,7 +97,9 @@ with sync_playwright() as p:
     # ---- 5. Fail a stage ----
     page.fill('textarea', "No GPS fix after 5 minutes on the pad.")
     page.click('button:has-text("Mark failed")')
-    page.wait_for_timeout(1500)
+    page.wait_for_selector("text=Which stage is responsible?", timeout=10000)
+    page.click('button:has-text("Record the failure")')
+    page.wait_for_timeout(1800)
     assert "Failed" in page.locator('.card:has(h2:text("Current stage"))').inner_text()
     log("Ground Testing marked FAILED")
 

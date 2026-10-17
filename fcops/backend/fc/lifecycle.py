@@ -62,11 +62,19 @@ TEST_STAGES = {
     Stage.FINAL_VALIDATION,
 }
 
-# Explicit backward (rework) routes. PRD §8 requires these be enumerated
-# rather than allowing arbitrary jumps. ASSUMPTION (see IMPLEMENTATION_NOTES):
-# a late hardware defect routes back to Manual/Machine Assembly; a firmware
-# defect routes back to Firmware; a mechanical defect back to Mechanical
-# Assembly. Confirm with Hardware/Firmware/Testing leads.
+# Standard backward (rework) routes: the ones that come up routinely, offered
+# first in the UI. PRD §8 requires these be enumerated rather than allowing
+# arbitrary jumps.
+#
+# A failure can still be routed to any *earlier* stage — a defect found in
+# ground testing may genuinely originate anywhere upstream — but a route that
+# is not listed here is treated as exceptional: it requires a reason and is
+# recorded in the audit log as such. That is the PRD's "make exceptional
+# transitions auditable" rather than "forbid them".
+#
+# CONFIRMED with the Testing lead: Bench Testing gates Ground Testing — an FC
+# only goes to ground test after bench validation passes — so a ground-test
+# failure routing back to Bench Testing is a standard route, not an exception.
 ALLOWED_REWORK_TARGETS = {
     Stage.QC: [Stage.MANUAL_ASSEMBLY, Stage.MACHINE_ASSEMBLY],
     Stage.FIRMWARE: [Stage.QC, Stage.MANUAL_ASSEMBLY, Stage.MACHINE_ASSEMBLY],
@@ -106,6 +114,20 @@ def rework_targets(failed_stage):
 
 
 def is_allowed_rework(failed_stage, target_stage):
+    return target_stage in ALLOWED_REWORK_TARGETS.get(failed_stage, [])
+
+
+def earlier_stages(stage):
+    """Every stage before this one, in lifecycle order.
+
+    A defect discovered late can have originated anywhere upstream, so all of
+    these are selectable when routing a failure back — the allow-list above
+    only decides which are *standard*.
+    """
+    return STAGE_ORDER[:STAGE_INDEX[stage]]
+
+
+def is_standard_rework(failed_stage, target_stage):
     return target_stage in ALLOWED_REWORK_TARGETS.get(failed_stage, [])
 
 

@@ -160,6 +160,11 @@ REQUIRE_INDEPENDENT_VERIFICATION = env_bool("REQUIRE_INDEPENDENT_VERIFICATION", 
 # issues remain unverified.
 ALLOW_MANAGER_DEVIATION = env_bool("ALLOW_MANAGER_DEVIATION", True)
 
+# How long the manager dashboard's aggregates may be reused. Short enough that
+# the numbers stay actionable, long enough that navigating back to the page
+# does not re-run fourteen aggregates against a database in another region.
+DASHBOARD_CACHE_SECONDS = int(env("DASHBOARD_CACHE_SECONDS", "20"))
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

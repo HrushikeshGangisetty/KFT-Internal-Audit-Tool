@@ -22,16 +22,17 @@ export default function FcDetail() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [notes, setNotes] = useState('')
+  const [failing, setFailing] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  // One request instead of four. Over a link to a distant database the round
+  // trips dominate, so the page loads in a quarter of the time.
   const reload = useCallback(async () => {
-    const [detail, tl, recs, iss] = await Promise.all([
-      api(`/api/fcs/${id}/`),
-      api(`/api/fcs/${id}/timeline/`),
-      api(`/api/fcs/${id}/stage_records/`),
-      api(`/api/fcs/${id}/issues/`),
-    ])
-    setFc(detail); setTimeline(tl); setRecords(recs); setIssues(iss)
+    const data = await api(`/api/fcs/${id}/full/`)
+    setFc(data.fc)
+    setTimeline(data.timeline)
+    setRecords(data.stage_records)
+    setIssues(data.issues)
   }, [id])
 
   useEffect(() => {
@@ -146,17 +147,28 @@ export default function FcDetail() {
                 {fc.current_stage === 'MANAGER_APPROVAL' ? (
                   <ApprovalPanel fc={fc} canApprove={canApprove} busy={busy} act={act} />
                 ) : (
-                  <div className="row">
-                    <button className="secondary" disabled={busy}
-                            onClick={() => act('start_stage')}>Start stage</button>
-                    <button className="ok" disabled={busy || fc.stage_blockers?.length > 0}
-                            title={fc.stage_blockers?.length
-                              ? 'Resolve and verify the open issues first'
-                              : ''}
-                            onClick={() => act('pass_stage')}>Mark passed</button>
-                    <button className="danger" disabled={busy}
-                            onClick={() => act('fail_stage')}>Mark failed</button>
-                  </div>
+                  <>
+                    <div className="row">
+                      <button className="secondary" disabled={busy}
+                              onClick={() => act('start_stage')}>Start stage</button>
+                      <button className="ok" disabled={busy || fc.stage_blockers?.length > 0}
+                              title={fc.stage_blockers?.length
+                                ? 'Resolve and verify the open issues first'
+                                : ''}
+                              onClick={() => act('pass_stage')}>Mark passed</button>
+                      <button className="danger" disabled={busy}
+                              onClick={() => setFailing((v) => !v)}>
+                        {failing ? 'Cancel' : 'Mark failed'}
+                      </button>
+                    </div>
+                    {failing ? (
+                      <FailPanel fc={fc} busy={busy} notes={notes}
+                                 onSubmit={(body) => {
+                                   setFailing(false)
+                                   return act('fail_stage', body)
+                                 }} />
+                    ) : null}
+                  </>
                 )}
               </>
             )}
@@ -718,6 +730,62 @@ function AuditTable({ rows }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+
+function FailPanel({ fc, busy, notes, onSubmit }) {
+  const [target, setTarget] = useState('')
+  const [reason, setReason] = useState('')
+  const options = fc.return_options || []
+  const chosen = options.find((o) => o.value === target)
+  const exceptional = Boolean(target) && chosen && !chosen.standard
+
+  return (
+    <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+      <h3 style={{ marginTop: 0 }}>Which stage is responsible?</h3>
+      <p className="small muted" style={{ marginTop: 0 }}>
+        A fault found here may have originated earlier. Naming that stage sends
+        the FC back to it, and the lifecycle continues from there — the failed
+        attempt stays in the record either way.
+      </p>
+      <Field label="Return the FC to">
+        <select value={target} onChange={(e) => setTarget(e.target.value)}>
+          <option value="">— stay here, just record the failure —</option>
+          <optgroup label="Usual routes">
+            {options.filter((o) => o.standard).map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Other earlier stages (recorded as exceptional)">
+            {options.filter((o) => !o.standard).map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </optgroup>
+        </select>
+      </Field>
+      {exceptional ? (
+        <div className="banner warn">
+          {chosen.label} is not a usual route after a {fc.stage_progress?.find(
+            (s) => s.stage === fc.current_stage)?.label} failure. Explain why that
+          stage is responsible — this is recorded as an exceptional route.
+        </div>
+      ) : null}
+      {target ? (
+        <Field label={exceptional ? 'Why is that stage responsible? (required)'
+                                  : 'What needs reworking there?'}>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+      ) : null}
+      <button className="danger"
+              disabled={busy || (exceptional && !reason.trim())}
+              onClick={() => onSubmit({
+                return_to_stage: target || null,
+                return_reason: reason,
+              })}>
+        {target ? `Fail and return to ${chosen?.label}` : 'Record the failure'}
+      </button>
     </div>
   )
 }

@@ -213,7 +213,21 @@ also runs a real full-text query and confirms the audit log rejects a raw
 If it cannot connect, the usual cause is the direct `db.<ref>.supabase.co` host
 on an IPv4-only network — switch to the session pooler host.
 
-### 3. Connection limits
+### 3. Running it fast
+
+Use `serve` rather than `runserver` for day-to-day work:
+
+```powershell
+python manage.py serve --threads 6
+```
+
+`runserver` opens a new database connection for every request, and against a
+database in another region that TLS handshake is roughly half a second of dead
+time on every click. `serve` runs waitress with a **bounded** thread pool, so
+connections can be kept open and reused without ever accumulating past the
+pooler's limit. `runserver` still works and is fine for debugging.
+
+### 4. Connection limits
 
 Supabase caps how many clients may be connected at once — on the session pooler
 that is **15**. Exceed it and every request fails with:
@@ -263,7 +277,7 @@ DATABASE_URL=postgresql://postgres.<ref>:<pw>@aws-<n>-<region>.pooler.supabase.c
 MIGRATION_DATABASE_URL=postgresql://postgres.<ref>:<pw>@aws-<n>-<region>.pooler.supabase.com:5432/postgres
 ```
 
-### 4. Frontend
+### 5. Frontend
 
 ```bash
 cd frontend
@@ -274,7 +288,7 @@ npm run dev        # http://localhost:5173, proxies /api to :8000
 For a production build: `npm run build` (output in `frontend/dist/`), served by
 any static host or by Django/nginx.
 
-### 5. Attachments
+### 6. Attachments
 
 Issue attachments are written to the local filesystem at `MEDIA_ROOT`
 (`backend/media/` by default). No object storage is configured, and the storage
@@ -381,7 +395,7 @@ cd backend
 python manage.py test tests --noinput
 ```
 
-123 tests, ~5–8 minutes (PostgreSQL index creation dominates). They cover the full
+155 tests, ~8 minutes (PostgreSQL index creation dominates). They cover the full
 production loop, workflow rejection paths, RBAC at the API layer,
 search/similarity, audit-log immutability including a raw-SQL tamper attempt,
 and the database-configuration layer (URL parsing, percent-encoded passwords,
@@ -399,6 +413,7 @@ pip install -r requirements-dev.txt
 playwright install chromium
 python e2e/ui_walkthrough.py       # lifecycle: registration -> approval
 python e2e/config_features.py     # Push Update, Firmware, Test Config, FC Models
+python e2e/param_and_routing.py   # failure routing + parameter comparison
 ```
 
 Drives a real browser through registration, lifecycle progression, stage
@@ -433,6 +448,10 @@ except `/api/health/` and `/api/auth/token/`.
 | `GET /api/dashboard/summary/` | Manager dashboard aggregate. |
 | `GET /api/audit-log/` | Read-only, filterable. No write route exists. |
 | `GET /api/lifecycle/` | Stage list and allowed rework targets (drives the UI). |
+| `GET /api/fcs/{id}/full/` | Detail, timeline, stage records and issues in one response — what the FC page uses. |
+| `POST /api/fcs/{id}/fail_stage/` | Fail a stage, optionally with `return_to_stage` + `return_reason` to send the FC back to the stage responsible. |
+| `GET/POST /api/parameter-files/` | Upload and list `.param` dumps. |
+| `POST /api/parameter-files/compare/` | Diff two dumps — each side may be an upload or a stored file. |
 
 ### Configuration & catalogue endpoints
 

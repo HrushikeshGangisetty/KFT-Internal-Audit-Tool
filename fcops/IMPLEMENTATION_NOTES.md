@@ -227,6 +227,79 @@ naming a colleague who lacks authority.
 - Checklist edits apply to the template as a whole; per-FC-model checklist
   variants remain a Phase 2 item, though the `fc_model` FK already supports them.
 
+## 0c. Pass 4 — failure routing, parameter compare, and latency
+
+### Routing a failure to the stage that caused it
+
+Failing a stage and sending the FC back used to be two steps. It is now one:
+the operator names the earlier stage responsible at the moment they record the
+failure, a rework record is opened against the failed attempt, and the FC moves
+back — the failed attempt stays in the record either way.
+
+Any *earlier* stage is selectable, because a defect found in ground testing can
+genuinely originate anywhere upstream. The standard routes are offered first;
+anything else is reachable but requires a written reason and is recorded in the
+audit log as an **exceptional route**. Forbidding those routes outright would
+just push people to pick the nearest allowed stage and misattribute the fault,
+which is exactly what this system exists to prevent.
+
+**Confirmed with the Testing lead: Bench Testing gates Ground Testing.** An FC
+only goes to ground test once bench validation has passed, so that return route
+is standard, not exceptional. One of the §36 open questions is now closed.
+
+### Parameter file comparison
+
+`.param` dumps are parsed into `{NAME: value}` and stored alongside the raw
+text (a parameter dump is evidence; evidence should not be lossy). The parser
+accepts comma, tab and whitespace separators, ignores comments, and *reports*
+lines it could not read rather than silently dropping values.
+
+The diff reports changed / only-on-one-side / identical, with a signed delta
+and the parameter family for grouping. A precision threshold marks tiny
+floating-point differences as noise but never hides them — a calibration value
+that moved in the tenth decimal is usually nothing, but that is the operator's
+call, not the tool's. Verified against the four real dumps supplied: 1,142 vs
+1,073 parameters, 137 changed, 69 present on only one side.
+
+Either side of a comparison may be an upload (quick check, nothing stored) or a
+dump already recorded against an FC.
+
+### Latency
+
+The UI felt slow because of round trips to a database in Sydney, not rendering.
+Measured before anything changed:
+
+| Page | Requests | Queries | Est. database wait @180 ms RTT |
+|---|---|---|---|
+| FC detail | 4 | 37 | ~6.7 s |
+| FC list | 1 | 23 | ~4.1 s |
+| Dashboard | 1 | 14 | ~2.5 s |
+
+Four causes, four fixes:
+
+1. **N+1 queries.** `stage_progress()` ran a count per lifecycle stage,
+   `approval_blockers()` a query per stage, and the FC list counted open issues
+   once per row. All now derive from a single prefetch or a SQL annotation.
+   FC detail 37 → 7, list 23 → 3.
+2. **Four requests for one page.** `GET /api/fcs/{id}/full/` returns detail,
+   timeline, stage records and issues together — they were always fetched
+   together anyway.
+3. **A new connection per request.** `CONN_MAX_AGE` has to be 0 under
+   `runserver`, whose thread-per-request model would otherwise exhaust the
+   pooler. `python manage.py serve` runs waitress with a bounded thread pool,
+   where persistent connections are safe — worth roughly half a second per
+   request on a long link.
+4. **The dashboard's fourteen aggregates** are over different tables with
+   different groupings and cannot be merged, so the result is cached for 20
+   seconds instead. Repeat loads cost one query. `?fresh=1` bypasses it.
+
+Net: the FC page went from 4 requests / 37 queries to **1 request / 7 queries**,
+and the dashboard from 14 queries to 1 on any repeat load.
+
+Query counts are now a tested property, not a hope: `QueryBudgetTests` fails if
+the cost of a list or detail page grows as rows are added, which is how an N+1
+gets reintroduced.
+
 ## 1. Architectural decisions
 
 | Decision | Rationale |
@@ -362,16 +435,16 @@ Nothing blocks local development. The following are placeholders in
 - **Closed issues are admin-editable** via `PUT /api/issues/{id}/` (audited), per
   PRD §8's "admin-level correction with an audit trail entry". There is no UI
   for this.
-- **Test suite is slow** (~5–8 min for 123 tests) because each test class rebuilds
+- **Test suite is slow** (~8 min for 155 tests) because each test class rebuilds
   GIN indexes. `--keepdb` helps locally.
 
 ## 7. Remaining work, in priority order
 
 1. Rotate the Supabase database password (it was exposed on a debug page and
    in a chat transcript), then re-verify with `dbcheck`.
-2. Confirm the §36 workflow questions with the Hardware/Firmware/Testing leads
-   and adjust `ALLOWED_REWORK_TARGETS` — this is the highest-value unblocking
-   conversation, and it is a one-file change.
+2. Confirm the remaining §36 workflow questions with the Hardware and Firmware
+   leads. Bench-gates-ground is now confirmed; still open are which rework
+   routes count as standard, and whether late rework forces downstream re-runs.
 3. Shared attachment storage (Supabase Storage is the natural fit given the
    database already lives there), once attachments matter.
 3. Frontend tests (none exist; backend coverage is good). Playwright smoke tests

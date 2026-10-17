@@ -3,10 +3,14 @@ Firmware, Test Configuration and FC Models — including that each is hidden fro
 roles that may not use it."""
 import os
 import sys
+import time
 
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:5173")
+# Unique per run: release records and firmware builds are permanent by design,
+# so a fixed version would collide the second time this suite is run.
+RUN = str(int(time.time()))[-6:]
 PW = "ChangeMe123!"
 steps, errs = [], []
 
@@ -58,8 +62,8 @@ with sync_playwright() as p:
     page.click('a:has-text("Push Update")')
     page.wait_for_selector("text=Record a new release", timeout=10000)
     page.select_option('select >> nth=0', "GCS")
-    page.fill('input >> nth=0', "2.6.0")
-    page.fill('input.mono >> nth=0', "9f2c1ab4d7e5")
+    page.fill('input >> nth=0', f"2.6.{RUN}")
+    page.fill('input.mono >> nth=0', f"9f2c1ab4{RUN}")
     page.fill('textarea', "Restored the serial handshake timeout to 500 ms and "
                           "fixed the telemetry reconnect loop.")
     # approver dropdown is the last select in the form
@@ -68,7 +72,7 @@ with sync_playwright() as p:
     page.wait_for_selector("text=Release history", timeout=10000)
     page.wait_for_timeout(1500)
     no_error(page, "pushing a software update")
-    assert "9f2c1ab4d7e5"[:12] in page.inner_text("table"), "release not listed"
+    assert f"9f2c1ab4{RUN}"[:12] in page.inner_text("table"), "release not listed"
     log("software update pushed and appears in the release history")
     page.screenshot(path="/tmp/v3-push-update.png", full_page=True)
 
@@ -84,14 +88,14 @@ with sync_playwright() as p:
     page.wait_for_selector("text=Firmware name", timeout=10000)
     page.fill('form input >> nth=0', "KFT-FC")
     page.fill('form input >> nth=1', "APJ")
-    page.fill('form input >> nth=2', "4.5.0")
+    page.fill('form input >> nth=2', f"4.5.{RUN}")
     page.fill('form input >> nth=3', "c0ffee123456")
     page.fill('form textarea >> nth=0', "Dual-GPS blending and a new baro driver.")
     page.check('form input[type="checkbox"] >> nth=1')      # signed
     page.click('button:has-text("Add build")')
     page.wait_for_timeout(2000)
     no_error(page, "adding a firmware build")
-    assert "4.5.0" in page.inner_text("table")
+    assert f"4.5.{RUN}" in page.inner_text("table")
     log("firmware build added to the catalogue")
 
     page.click('button:has-text("Retire")')
@@ -113,12 +117,12 @@ with sync_playwright() as p:
     page.click('a:has-text("Test Configuration")')
     page.wait_for_selector("text=Add a test", timeout=10000)
     before_version = page.locator('.tag.info').first.inner_text()
-    page.fill('form input >> nth=0', "Geofence breach triggers RTL")
+    page.fill('form input >> nth=0', f"Geofence breach triggers RTL {RUN}")
     page.fill('form textarea', "Fly toward the fence at 5 m/s and confirm RTL engages.")
     page.click('button:has-text("Add test")')
     page.wait_for_timeout(2000)
     no_error(page, "adding a test")
-    assert "Geofence breach triggers RTL" in page.inner_text("table")
+    assert f"Geofence breach triggers RTL {RUN}" in page.inner_text("table")
     after_version = page.locator('.tag.info').first.inner_text()
     assert before_version != after_version, "checklist version did not change"
     log(f"test added and checklist version bumped ({before_version} -> {after_version})")
@@ -133,15 +137,15 @@ with sync_playwright() as p:
     # ---- 4. Manager: FC Models ----
     page.click('a:has-text("FC Models")')
     page.wait_for_selector("text=Add an FC model", timeout=10000)
-    page.fill('form input >> nth=0', "KFT-FC-PRO")
+    page.fill('form input >> nth=0', f"KFT-FC-PRO-{RUN}")
     page.click('button:has-text("Add model")')
     page.wait_for_timeout(2000)
     no_error(page, "adding an FC model")
-    assert "KFT-FC-PRO" in page.inner_text("table")
+    assert f"KFT-FC-PRO-{RUN}" in page.inner_text("table")
     log("FC model added by the manager")
 
     page.once("dialog", lambda d: d.accept())
-    page.click('table tbody tr:has-text("KFT-FC-PRO") button:has-text("Archive")')
+    page.click(f'table tbody tr:has-text("KFT-FC-PRO-{RUN}") button:has-text("Archive")')
     page.wait_for_timeout(1800)
     no_error(page, "archiving an FC model")
     assert "archived" in page.inner_text("table").lower()

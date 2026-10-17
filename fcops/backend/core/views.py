@@ -1,4 +1,6 @@
-from django.db.models import Avg, Count, F, Q
+from django.db.models import Avg, Count, F, Prefetch, Q
+from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta
 
@@ -50,10 +52,31 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class DashboardSummaryView(APIView):
-    """Manager dashboard aggregate (PRD §22)."""
+    """Manager dashboard aggregate (PRD §22).
+
+    Fourteen distinct aggregates over four tables, each a round trip to a
+    hosted database. They cannot be merged — different tables, different
+    groupings — so the answer is cached briefly instead. A production overview
+    does not need to be accurate to the second, and a short TTL turns repeated
+    navigation into an instant page while keeping the numbers current enough to
+    act on. Pass ``?fresh=1`` to bypass it.
+    """
+
     permission_classes = [IsAuthenticated]
+    CACHE_SECONDS = int(getattr(settings, "DASHBOARD_CACHE_SECONDS", 20))
 
     def get(self, request):
+        window_days = request.query_params.get("window_days", "90")
+        cache_key = f"dashboard:summary:{window_days}"
+        if not request.query_params.get("fresh"):
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return Response({**cached, "cached": True})
+        payload = self._build(request)
+        cache.set(cache_key, payload, self.CACHE_SECONDS)
+        return Response({**payload, "cached": False})
+
+    def _build(self, request):
         from issues.models import Issue, IssueStatus, Severity
 
         window_days = int(request.query_params.get("window_days", 90))
@@ -69,11 +92,13 @@ class DashboardSummaryView(APIView):
                      FlightController.objects.values("status").annotate(n=Count("id"))}
 
         blocked = (FlightController.objects.filter(status=FCStatus.BLOCKED)
-                   .prefetch_related("issues")[:50])
+                   .prefetch_related(
+                       Prefetch("issues",
+                                queryset=Issue.objects.exclude(
+                                    status=IssueStatus.CLOSED)))[:50])
         blocked_rows = []
         for fc in blocked:
-            open_issues = [i for i in fc.issues.all()
-                           if i.status not in (IssueStatus.CLOSED,)]
+            open_issues = list(fc.issues.all())
             blocked_rows.append({
                 "id": fc.id, "serial": fc.serial,
                 "stage": Stage(fc.current_stage).label,
@@ -94,28 +119,30 @@ class DashboardSummaryView(APIView):
             Issue.objects.filter(created_at__gte=since)
             .values("discovered_stage").annotate(n=Count("id")).order_by("-n"))
 
-        resolution_times = []
-        for issue in Issue.objects.filter(resolved_at__isnull=False,
-                                          created_at__gte=since):
-            resolution_times.append((issue.resolved_at - issue.created_at).total_seconds())
-        avg_resolution_hours = (round(sum(resolution_times) / len(resolution_times) / 3600, 1)
-                                if resolution_times else None)
+        # Averaged in the database rather than by pulling every row across the
+        # network and looping in Python — the difference is a few hundred bytes
+        # versus the whole table on every dashboard load.
+        avg_resolution = Issue.objects.filter(
+            resolved_at__isnull=False, created_at__gte=since
+        ).aggregate(avg=Avg(F("resolved_at") - F("created_at")))["avg"]
+        avg_resolution_hours = (round(avg_resolution.total_seconds() / 3600, 1)
+                                if avg_resolution else None)
 
-        stage_durations = {}
-        for rec in StageRecord.objects.filter(completed_at__isnull=False,
-                                              started_at__isnull=False,
-                                              completed_at__gte=since):
-            stage_durations.setdefault(rec.stage, []).append(
-                (rec.completed_at - rec.started_at).total_seconds())
         avg_time_in_stage = [
-            {"stage": s, "label": Stage(s).label,
-             "avg_hours": round(sum(v) / len(v) / 3600, 2)}
-            for s, v in stage_durations.items()]
+            {"stage": row["stage"], "label": Stage(row["stage"]).label,
+             "avg_hours": round(row["avg"].total_seconds() / 3600, 2)}
+            for row in StageRecord.objects.filter(
+                completed_at__isnull=False, started_at__isnull=False,
+                completed_at__gte=since
+            ).values("stage").annotate(
+                avg=Avg(F("completed_at") - F("started_at"))
+            ).order_by("stage")
+            if row["avg"] is not None]
 
         rework_counts = (ReworkRecord.objects.filter(created_at__gte=since)
                          .values("fc__serial").annotate(n=Count("id")).order_by("-n")[:10])
 
-        return Response({
+        return {
             "window_days": window_days,
             "fc_by_stage": [{"stage": s, "label": Stage(s).label, "count": by_stage[s]}
                             for s in STAGE_ORDER],
@@ -130,7 +157,7 @@ class DashboardSummaryView(APIView):
             "avg_resolution_hours": avg_resolution_hours,
             "avg_time_in_stage": avg_time_in_stage,
             "reworks_per_fc": list(rework_counts),
-        })
+        }
 
 
 class HealthView(APIView):

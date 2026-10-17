@@ -13,7 +13,8 @@ from fc.views import (ChecklistItemViewSet, ChecklistTemplateViewSet,
                       FCModelTypeViewSet, FirmwareBuildViewSet,
                       FirmwareRecordViewSet, FlightControllerViewSet,
                       LifecycleMetaView, ParameterProfileViewSet,
-                      ReworkRecordViewSet, SoftwareUpdateViewSet,
+                      ParameterFileViewSet, ReworkRecordViewSet,
+                      SoftwareUpdateViewSet,
                       SoftwareVersionViewSet, StageRecordViewSet,
                       TestResultViewSet)
 from issues.views import (IssueAttachmentViewSet, IssueViewSet, KnownIssueViewSet)
@@ -28,6 +29,7 @@ router.register("checklist-templates", ChecklistTemplateViewSet)
 router.register("checklist-items", ChecklistItemViewSet)
 router.register("firmware-builds", FirmwareBuildViewSet)
 router.register("software-updates", SoftwareUpdateViewSet)
+router.register("parameter-files", ParameterFileViewSet)
 router.register("fcs", FlightControllerViewSet)
 router.register("stage-records", StageRecordViewSet)
 router.register("rework-records", ReworkRecordViewSet)
