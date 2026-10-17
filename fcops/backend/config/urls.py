@@ -1,12 +1,11 @@
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 
-from accounts.views import (AuditedTokenObtainPairView, DepartmentViewSet,
-                            UserViewSet)
+from accounts.views import (CsrfView, DepartmentViewSet, LoginView, LogoutView,
+                            MeView, UserViewSet)
 from core.views import (AuditLogViewSet, DashboardSummaryView, HealthView,
-                        NotificationViewSet)
+                        NotificationViewSet, spa_index)
 from fc.views import (ChecklistItemViewSet, ChecklistTemplateViewSet,
                       FCModelTypeViewSet, FirmwareBuildViewSet,
                       FirmwareRecordViewSet, FlightControllerViewSet,
@@ -41,12 +40,15 @@ router.register("lifecycle", LifecycleMetaView, basename="lifecycle")
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health/", HealthView.as_view()),
-    path("api/auth/token/", AuditedTokenObtainPairView.as_view(), name="token_obtain_pair"),
-    path("api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
-    path("api/auth/token/verify/", TokenVerifyView.as_view()),
+    path("api/auth/csrf/", CsrfView.as_view()),
+    path("api/auth/login/", LoginView.as_view()),
+    path("api/auth/logout/", LogoutView.as_view()),
+    path("api/auth/me/", MeView.as_view()),
     path("api/dashboard/summary/", DashboardSummaryView.as_view()),
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls")),
+    # Everything else is a frontend route: serve the SPA so deep links load.
+    re_path(r"^(?!api/|api-auth/|admin/|static/|media/).*$", spa_index),
 ]
 
 # Uploaded files are never served from a public media URL: attachments are

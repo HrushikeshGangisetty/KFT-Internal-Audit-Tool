@@ -48,3 +48,28 @@ def resolve_actor():
         if user is not None and getattr(user, "is_authenticated", False):
             return user
     return None
+
+
+class AbsoluteSessionTimeoutMiddleware:
+    """End a session a fixed time after login, however active it is.
+
+    ``SESSION_COOKIE_AGE`` with ``SESSION_SAVE_EVERY_REQUEST`` already gives
+    the idle timeout; this adds the absolute cap (WP2).
+    """
+
+    KEY = "auth_started_at"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        import time
+
+        from django.conf import settings
+        from django.contrib.auth import logout
+
+        started = request.session.get(self.KEY)
+        if (started is not None and request.user.is_authenticated
+                and time.time() - started > settings.SESSION_ABSOLUTE_SECONDS):
+            logout(request)
+        return self.get_response(request)

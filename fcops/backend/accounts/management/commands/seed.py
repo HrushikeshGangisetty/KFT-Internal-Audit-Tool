@@ -82,6 +82,11 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        from django.conf import settings
+        from django.core.management.base import CommandError
+        if options["demo"] and (not settings.DEBUG or settings.PRODUCTION):
+            raise CommandError("Refusing to seed demo data: DEBUG is off or "
+                               "PRODUCTION=1. Demo users have a known password.")
         password = options["password"]
         depts = {}
         for name, code, kind in DEPARTMENTS:

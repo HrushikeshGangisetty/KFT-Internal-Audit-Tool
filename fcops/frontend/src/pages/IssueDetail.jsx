@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { api, download, listOf } from '../lib/api'
+import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
 import {
   Banner, Empty, FcLink, Field, Loading, SeverityTag, StatusTag, Tag, humanize, when,
@@ -343,7 +343,7 @@ function Attachments({ issue, onDone }) {
       {issue.attachments.length === 0 ? <Empty>No photos, logs or captures yet.</Empty> : null}
       {issue.attachments.map((a) => (
         <div key={a.id} className="note">
-          <a href={a.url} onClick={(e) => { e.preventDefault(); download(a.url, a.original_name).catch((err) => setError(err.message)) }}>{a.original_name || 'file'}</a>
+          <a href={a.url}>{a.original_name || 'file'}</a>
           <div className="meta">
             {Math.round((a.size || 0) / 1024)} kB · {a.uploaded_by_name} · {when(a.created_at)}
           </div>

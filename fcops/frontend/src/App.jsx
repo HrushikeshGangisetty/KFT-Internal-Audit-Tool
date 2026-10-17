@@ -88,7 +88,7 @@ function Shell({ children }) {
           <strong>{user?.full_name || user?.username}</strong>
           {user?.role_display} · {user?.department_name || 'No department'}
           <div style={{ marginTop: 8 }}>
-            <button className="link" onClick={() => { logout(); navigate('/login') }}>
+            <button className="link" onClick={async () => { await logout(); navigate('/login') }}>
               Sign out
             </button>
           </div>

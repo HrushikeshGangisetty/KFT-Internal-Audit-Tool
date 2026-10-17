@@ -5,18 +5,18 @@ from django.urls import get_resolver, path
 from rest_framework import viewsets
 from rest_framework.routers import APIRootView
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 
 from access.mixins import ScopedViewSetMixin
-from accounts.views import AuditedTokenObtainPairView
+from accounts.views import CsrfView, LoginView, LogoutView, MeView
 from core.views import DashboardSummaryView, HealthView
 from fc.views import LifecycleMetaView
 from issues.models import Issue
 
 ALLOWLIST = {
-    AuditedTokenObtainPairView,  # login: no records before authentication
-    TokenRefreshView,            # token exchange, no records
-    TokenVerifyView,             # token check, no records
+    CsrfView,                    # CSRF cookie/token, no records
+    LoginView,                   # sign-in: no records before authentication
+    LogoutView,                  # ends the caller's own session
+    MeView,                      # the caller's own profile and capabilities
     HealthView,                  # static status and time
     APIRootView,                 # router index of endpoint names
     LifecycleMetaView,           # stage enum metadata only

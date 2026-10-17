@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.db.models import Count, Prefetch
+from django.http import FileResponse, Http404
 from django.utils import timezone
 from datetime import timedelta
 
@@ -151,3 +153,12 @@ class HealthView(APIView):
 
     def get(self, request):
         return Response({"status": "ok", "time": timezone.now().isoformat()})
+
+
+def spa_index(request):
+    """The built frontend's index.html, for any non-API path (WP2). Its
+    assets are served by WhiteNoise from the same build directory."""
+    index = settings.FRONTEND_DIST / "index.html"
+    if not index.is_file():
+        raise Http404("Frontend build not found. Run `npm run build` in frontend/.")
+    return FileResponse(index.open("rb"), content_type="text/html")

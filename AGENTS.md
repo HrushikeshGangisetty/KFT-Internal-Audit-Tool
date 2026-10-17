@@ -4,7 +4,7 @@
 
 This repository contains KapilFutureTech's internal engineering platform candidate in `fcops/`.
 
-The user has subsequently authorised WP0 only: preservation commit/push, source inventory, isolated local validation, documentation, and the specified test tooling. Read `docs/IMPLEMENTATION_PLAN.md` and `docs/worklog/WP0.md` for that scope and actual results. This does not authorise WP1–WP15, product behaviour changes, shared-data mutations, deployment, or real email. Future working branches start from main; preserved local parameter work is integrated deliberately in WP8.
+The user has subsequently authorised WP0 (preservation, inventory, baseline), then WP1 (access policy) and WP2 (session authentication, single origin) on 17 October 2026. Read `docs/IMPLEMENTATION_PLAN.md` and `docs/worklog/WP0.md`–`WP2.md` for scope and actual results. This does not authorise WP3–WP15, product behaviour changes, shared-data mutations, deployment, or real email. Future working branches start from main; preserved local parameter work is integrated deliberately in WP8.
 
 Read `fcops/PRD.md` before planning or changing product behaviour. Current phase is requirements and architecture planning. The user has authorised PRD and agent-guidance documentation, not application implementation. Do not treat this file as authorisation to implement, migrate, deploy, or send email. Once the user authorises implementation, proceed within the authorised scope without repeatedly seeking the same permission.
 

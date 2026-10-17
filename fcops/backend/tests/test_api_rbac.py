@@ -28,11 +28,10 @@ class ApiTestCase(TestCase):
 
     def client_for(self, user):
         client = APIClient()
-        response = client.post("/api/auth/token/",
+        response = client.post("/api/auth/login/",
                                {"username": user.username, "password": PASSWORD},
                                format="json")
         assert response.status_code == 200, response.content
-        client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
         return client
 
 
@@ -41,16 +40,16 @@ class AuthTests(ApiTestCase):
         self.assertEqual(APIClient().get("/api/fcs/").status_code, 401)
 
     def test_bad_credentials_rejected(self):
-        response = APIClient().post("/api/auth/token/",
+        response = APIClient().post("/api/auth/login/",
                                     {"username": "tech", "password": "wrong"},
                                     format="json")
         self.assertEqual(response.status_code, 401)
 
     def test_me_endpoint_exposes_permissions(self):
-        response = self.client_for(self.manager).get("/api/users/me/")
+        response = self.client_for(self.manager).get("/api/auth/me/")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["permissions"]["can_approve"])
-        response = self.client_for(self.tech).get("/api/users/me/")
+        response = self.client_for(self.tech).get("/api/auth/me/")
         self.assertFalse(response.data["permissions"]["can_approve"])
 
     def test_health_is_public(self):

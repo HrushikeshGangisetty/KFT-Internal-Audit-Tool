@@ -1,16 +1,22 @@
-from django.contrib.auth import get_user_model
-from rest_framework import viewsets
+import time
+
+from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.middleware.csrf import get_token
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.views import APIView
 
 from access.mixins import ScopedViewSetMixin
 from core import audit
+from core.middleware import AbsoluteSessionTimeoutMiddleware
 from core.models import AuditLogEntry
 
+from . import ratelimit, services
 from .models import Department, Role
-from . import services
 from .permissions import IsAdmin
 from .serializers import (DepartmentSerializer, MeSerializer, UserSerializer,
                           UserWriteSerializer)
@@ -18,15 +24,60 @@ from .serializers import (DepartmentSerializer, MeSerializer, UserSerializer,
 User = get_user_model()
 
 
-class AuditedTokenObtainPairView(TokenObtainPairView):
-    def post(self, request, *args, **kwargs):
-        response = super().post(request, *args, **kwargs)
-        username = request.data.get("username")
-        user = User.objects.filter(username=username).first()
-        if user and response.status_code == 200:
-            audit.record(user, AuditLogEntry.ACTION_LOGIN, actor=user,
-                         note="Successful login")
-        return response
+# --- Session authentication (WP2) -----------------------------------------
+class CsrfView(APIView):
+    """Sets the CSRF cookie and returns the token for the X-CSRFToken header."""
+    permission_classes = [AllowAny]
+
+    @method_decorator(ensure_csrf_cookie)
+    def get(self, request):
+        return Response({"csrfToken": get_token(request)})
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class LoginView(APIView):
+    """Django ``login()`` rotates the session key and CSRF token. CSRF is
+    enforced here too, so another site cannot log a browser in."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = request.data.get("username") or ""
+        ip = request.META.get("REMOTE_ADDR", "")
+        if ratelimit.is_locked(username, ip):
+            return Response({"detail": "Too many failed sign-in attempts. Try again "
+                                       "later."},
+                            status=status.HTTP_429_TOO_MANY_REQUESTS)
+        user = authenticate(request, username=username,
+                            password=request.data.get("password") or "")
+        if user is None:
+            ratelimit.record_failure(username, ip)
+            return Response({"detail": "Incorrect username or password."},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        ratelimit.clear(username, ip)
+        login(request, user)
+        request.session[AbsoluteSessionTimeoutMiddleware.KEY] = time.time()
+        audit.record(user, AuditLogEntry.ACTION_LOGIN, actor=user,
+                     note="Successful login")
+        return Response(MeSerializer(user).data)
+
+
+class LogoutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        logout(request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MeView(APIView):
+    """The signed-in user, or an empty 200 when nobody is signed in: the SPA
+    asks on every load, and that is not an error."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        if not request.user.is_authenticated:
+            return Response(None)
+        return Response(MeSerializer(request.user).data)
 
 
 class DepartmentViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
@@ -83,16 +134,15 @@ class UserViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
         before = audit.snapshot(serializer.instance,
                                 fields=["username", "role", "department", "is_active"])
         old_department, old_role = serializer.instance.department, serializer.instance.role
+        was_active = serializer.instance.is_active
         obj = serializer.save()
+        if was_active and not obj.is_active:
+            services.end_sessions(obj, actor=self.request.user)
         services.sync_legacy_fields(obj, actor=self.request.user,
                                     old_department=old_department, old_role=old_role)
         audit.record_change(obj, AuditLogEntry.ACTION_PERMISSION, before,
                             fields=["username", "role", "department", "is_active"],
                             note="User updated")
-
-    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
-    def me(self, request):
-        return Response(MeSerializer(request.user).data)
 
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
     def roles(self, request):

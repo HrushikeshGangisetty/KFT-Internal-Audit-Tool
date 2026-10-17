@@ -2,7 +2,6 @@
 import os
 import sys
 from pathlib import Path
-from datetime import timedelta
 
 from dotenv import load_dotenv
 
@@ -44,7 +43,6 @@ INSTALLED_APPS = [
     "django.contrib.postgres",
     "rest_framework",
     "django_filters",
-    "corsheaders",
     "accounts",
     "core",
     "fc",
@@ -53,12 +51,15 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Serves the built SPA (WHITENOISE_ROOT) and collected static files from
+    # the same origin as the API (WP2).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "core.middleware.AbsoluteSessionTimeoutMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "core.middleware.CurrentActorMiddleware",
@@ -129,10 +130,8 @@ MEDIA_ROOT = Path(env("MEDIA_ROOT", str(BASE_DIR / "media")))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-    ),
+    # Session cookie only (WP2): no token is ever handed to the browser.
+    "DEFAULT_AUTHENTICATION_CLASSES": ("core.authentication.SessionAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
@@ -143,15 +142,33 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
 }
 
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(env("JWT_ACCESS_MINUTES", "120"))),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(env("JWT_REFRESH_DAYS", "7"))),
-    "AUTH_HEADER_TYPES": ("Bearer",),
-}
+# --- Sessions and CSRF (WP2) ------------------------------------------------
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+# Secure cookies whenever the site is not a DEBUG dev server (HTTPS in prod).
+SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
+# Idle timeout: the expiry slides on every request.
+SESSION_COOKIE_AGE = int(env("SESSION_IDLE_SECONDS", str(8 * 3600)))
+SESSION_SAVE_EVERY_REQUEST = True
+# Absolute lifetime regardless of activity (core.middleware).
+SESSION_ABSOLUTE_SECONDS = int(env("SESSION_ABSOLUTE_SECONDS", str(24 * 3600)))
+# Login lockout (accounts.ratelimit): failures per username and per IP.
+LOGIN_FAILURE_LIMIT = int(env("LOGIN_FAILURE_LIMIT", "5"))
+LOGIN_LOCKOUT_SECONDS = int(env("LOGIN_LOCKOUT_SECONDS", "900"))
 
-CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", True)
-CORS_ALLOWED_ORIGINS = [o for o in env("CORS_ALLOWED_ORIGINS", "").split(",") if o]
-CSRF_TRUSTED_ORIGINS = [o for o in env("CSRF_TRUSTED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o]
+# --- Single origin (WP2) ------------------------------------------------------
+# The production build of the frontend, served by WhiteNoise at the site root;
+# any non-API path returns its index.html so deep links load the SPA.
+FRONTEND_DIST = Path(env("FRONTEND_DIST", str(BASE_DIR.parent / "frontend" / "dist")))
+WHITENOISE_ROOT = FRONTEND_DIST if FRONTEND_DIST.is_dir() else None
+WHITENOISE_INDEX_FILE = True
+# Refuse demo seeding on anything that looks like production.
+PRODUCTION = env_bool("PRODUCTION", False)
+
+# Only needed when a proxy rewrites Host; the Vite dev proxy keeps it intact.
+CSRF_TRUSTED_ORIGINS = [o for o in env("CSRF_TRUSTED_ORIGINS", "").split(",") if o]
 
 # --- Domain policy toggles (see IMPLEMENTATION_NOTES.md) -------------------
 # Require verification (by a different user than the resolver) before an issue

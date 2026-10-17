@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { api, getTokens, login as apiLogin, setTokens } from './api'
+import { currentUser, login as apiLogin, logout as apiLogout } from './api'
 
 const AuthContext = createContext(null)
 
@@ -8,13 +8,10 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!getTokens()?.access) {
-      setLoading(false)
-      return
-    }
-    api('/api/users/me/')
-      .then(setUser)
-      .catch(() => setTokens(null))
+    // The session cookie is HttpOnly, so ask the server who we are.
+    currentUser()
+      .then((me) => setUser(me || null))
+      .catch(() => setUser(null))
       .finally(() => setLoading(false))
   }, [])
 
@@ -27,8 +24,8 @@ export function AuthProvider({ children }) {
         setUser(me)
         return me
       },
-      logout: () => {
-        setTokens(null)
+      logout: async () => {
+        await apiLogout()
         setUser(null)
       },
       can: (permission) => Boolean(user?.permissions?.[permission]),

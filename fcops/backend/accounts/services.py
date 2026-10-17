@@ -1,4 +1,5 @@
 """Membership and capability changes (WP1). Every change is audited."""
+from django.contrib.sessions.models import Session
 from django.db import transaction
 from django.utils import timezone
 
@@ -107,3 +108,21 @@ def sync_legacy_fields(user, *, actor, old_department=None, old_role=None):
         revoke_capability(user, cap, actor=actor)
     for cap in new_caps - old_caps:
         grant_capability(user, cap, actor=actor, note="Derived from role/department")
+
+
+def end_sessions(user, *, actor):
+    """Delete every live session of ``user`` (on deactivation, WP2).
+
+    Django already treats an inactive user's session as anonymous; deleting
+    the rows makes that explicit and survives a later reactivation.
+    ponytail: decodes every live session; index sessions by user if the
+    table grows large.
+    """
+    ended = 0
+    for session in Session.objects.filter(expire_date__gt=timezone.now()):
+        if session.get_decoded().get("_auth_user_id") == str(user.pk):
+            session.delete()
+            ended += 1
+    audit.record(user, AuditLogEntry.ACTION_PERMISSION, actor=actor,
+                 after={"sessions_ended": ended}, note="Sessions ended on deactivation")
+    return ended

@@ -1,17 +1,5 @@
-const TOKEN_KEY = 'fcops.tokens'
-
-export function getTokens() {
-  try {
-    return JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null')
-  } catch {
-    return null
-  }
-}
-
-export function setTokens(tokens) {
-  if (tokens) localStorage.setItem(TOKEN_KEY, JSON.stringify(tokens))
-  else localStorage.removeItem(TOKEN_KEY)
-}
+// Session-cookie API client (WP2). The session cookie is HttpOnly and never
+// touched here; unsafe methods carry the CSRF token in X-CSRFToken.
 
 export class ApiError extends Error {
   constructor(message, status, payload) {
@@ -34,48 +22,36 @@ function messageFrom(payload, status) {
   return parts.join(' · ') || `Request failed (${status})`
 }
 
-async function refreshAccess() {
-  const tokens = getTokens()
-  if (!tokens?.refresh) return null
-  const response = await fetch('/api/auth/token/refresh/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh: tokens.refresh }),
-  })
-  if (!response.ok) {
-    setTokens(null)
-    return null
+// Kept in memory only. Django rotates it on login, so it is dropped then.
+let csrfToken = null
+
+async function csrf() {
+  if (!csrfToken) {
+    const response = await fetch('/api/auth/csrf/', { credentials: 'same-origin' })
+    csrfToken = (await response.json()).csrfToken
   }
-  const data = await response.json()
-  const next = { ...tokens, access: data.access }
-  setTokens(next)
-  return next.access
+  return csrfToken
 }
 
-export async function api(path, { method = 'GET', body, params, isForm } = {}) {
+const SAFE = ['GET', 'HEAD', 'OPTIONS']
+
+export async function api(path, { method = 'GET', body, params, isForm, redirectOn401 = true } = {}) {
   const url = new URL(path, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v)
     })
   }
+  const headers = {}
+  if (body && !isForm) headers['Content-Type'] = 'application/json'
+  if (!SAFE.includes(method)) headers['X-CSRFToken'] = await csrf()
 
-  const send = async (accessToken) => {
-    const headers = {}
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
-    if (body && !isForm) headers['Content-Type'] = 'application/json'
-    return fetch(url.toString().replace(window.location.origin, ''), {
-      method,
-      headers,
-      body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
-    })
-  }
-
-  let response = await send(getTokens()?.access)
-  if (response.status === 401) {
-    const access = await refreshAccess()
-    if (access) response = await send(access)
-  }
+  const response = await fetch(url.pathname + url.search, {
+    method,
+    headers,
+    credentials: 'same-origin',
+    body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
+  })
 
   const text = await response.text()
   let payload = null
@@ -84,6 +60,9 @@ export async function api(path, { method = 'GET', body, params, isForm } = {}) {
   } catch {
     payload = text
   }
+  if (response.status === 401 && redirectOn401 && window.location.pathname !== '/login') {
+    window.location.assign('/login')
+  }
   if (!response.ok) {
     throw new ApiError(messageFrom(payload, response.status), response.status, payload)
   }
@@ -91,33 +70,21 @@ export async function api(path, { method = 'GET', body, params, isForm } = {}) {
 }
 
 export async function login(username, password) {
-  const response = await fetch('/api/auth/token/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+  const me = await api('/api/auth/login/', {
+    method: 'POST', body: { username, password }, redirectOn401: false,
   })
-  if (!response.ok) throw new ApiError('Incorrect username or password.', response.status)
-  const tokens = await response.json()
-  setTokens(tokens)
-  return api('/api/users/me/')
+  csrfToken = null
+  return me
 }
+
+export async function logout() {
+  try {
+    await api('/api/auth/logout/', { method: 'POST', redirectOn401: false })
+  } finally {
+    csrfToken = null
+  }
+}
+
+export const currentUser = () => api('/api/auth/me/', { redirectOn401: false })
 
 export const listOf = (payload) => (Array.isArray(payload) ? payload : payload?.results ?? [])
-
-// Attachments are served only through an authorised endpoint, so a plain
-// link cannot carry the bearer token. Fetch the file and hand it to the browser.
-export async function download(path, filename) {
-  const send = (token) => fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  let response = await send(getTokens()?.access)
-  if (response.status === 401) {
-    const access = await refreshAccess()
-    if (access) response = await send(access)
-  }
-  if (!response.ok) throw new ApiError(`Download failed (${response.status})`, response.status)
-  const url = URL.createObjectURL(await response.blob())
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename || 'download'
-  a.click()
-  URL.revokeObjectURL(url)
-}

@@ -244,6 +244,14 @@ with sync_playwright() as p:
     log("manager approved the FC for release")
     page.screenshot(path="/tmp/v2-approved.png", full_page=True)
 
+    # ---- 16. No credentials in script-readable storage (WP2) ----
+    stored = page.evaluate("""() => JSON.stringify({
+        local: Object.keys(localStorage), session: Object.keys(sessionStorage),
+        cookies: document.cookie })""")
+    assert '"local":[]' in stored and '"session":[]' in stored, stored
+    assert "sessionid" not in stored, f"session cookie readable by script: {stored}"
+    log("no token in localStorage/sessionStorage; session cookie is HttpOnly")
+
     ctx.close(); b.close()
 
 print("\nSTEPS PASSED:", len(steps))

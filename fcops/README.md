@@ -32,7 +32,7 @@ backend/
 frontend/
   src/pages/     Login, Dashboard, FC list/create/detail, Issue list/create/
                  detail, Known Issues, Knowledge Search, Audit Log, Admin
-  src/lib/       API client (JWT + silent refresh), auth context
+  src/lib/       API client (session cookie + CSRF header), auth context
 ```
 
 ### Why this stack
@@ -42,7 +42,7 @@ frontend/
 | Backend | Django 5 + DRF | The PRD (§38) notes the team already runs Django + React + PostgreSQL. Django's ORM, migrations, admin and auth remove most of the plumbing for a strongly relational, audited workflow app. |
 | Database | PostgreSQL (Supabase-hosted) | The data is inherently relational (FC → stages → issues → departments) and needs transactional integrity for workflow changes. Also gives us full-text search for free. Supabase is used purely as managed PostgreSQL — no Supabase Auth, no RLS, no PostgREST. |
 | Search | Postgres `tsvector` + GIN | Sufficient for v1 volume; no separate search cluster to run. |
-| Auth | JWT (SimpleJWT) + Django auth | No internal identity provider was available (see IMPLEMENTATION_NOTES). SSO can be layered in later without touching the permission model. |
+| Auth | Django sessions (HttpOnly cookie + CSRF header) | Single origin, no token in browser storage, sessions end on deactivation (WP2). SSO can be layered in later without touching the permission model. |
 | Frontend | React 19 + Vite + React Router | Fast dev loop, no build ceremony. Plain CSS with design tokens — desktop-first, tablet-friendly. |
 | Structure | Modular monolith | One deployable, one transaction boundary. Microservices would add operational cost with no benefit at this scale. |
 
@@ -62,7 +62,7 @@ frontend/
 
 ```
 Browser (React, Vite)            no database credentials, ever
-        |  HTTPS + JWT
+        |  HTTPS, same origin, session cookie
         v
 Django REST API                  auth, RBAC, lifecycle state machine,
         |                        audit logging, search — all business logic
@@ -73,7 +73,7 @@ Supabase PostgreSQL              shared by the whole team
 Django  ->  local filesystem     issue attachments (MEDIA_ROOT)
 ```
 
-Supabase is managed PostgreSQL and nothing more. Auth stays in Django (JWT),
+Supabase is managed PostgreSQL and nothing more. Auth stays in Django (sessions),
 RBAC stays in `accounts/permissions.py`, and the lifecycle state machine stays
 in `fc/services.py`. Row-level security is not used, because every query already
 goes through a single trusted backend that enforces permissions server-side.
@@ -323,8 +323,11 @@ browser talks to Django, Django talks to PostgreSQL.
 | `DJANGO_SECRET_KEY` | dev placeholder | **Must** be a random 50-char string in any shared environment. |
 | `DJANGO_DEBUG` | `True` | Set `False` in production. |
 | `DJANGO_ALLOWED_HOSTS` | `*` | Comma-separated hostnames. |
-| `JWT_ACCESS_MINUTES` / `JWT_REFRESH_DAYS` | `120` / `7` | Token lifetimes. |
-| `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` | dev server | Frontend origins. |
+| `SESSION_IDLE_SECONDS` / `SESSION_ABSOLUTE_SECONDS` | `28800` / `86400` | Session idle timeout and absolute lifetime. |
+| `LOGIN_FAILURE_LIMIT` / `LOGIN_LOCKOUT_SECONDS` | `5` / `900` | Sign-in lockout per username and per IP. |
+| `CSRF_TRUSTED_ORIGINS` | *(empty)* | Only when a proxy rewrites the Host header. |
+| `FRONTEND_DIST` | `../frontend/dist` | Built SPA served from the same origin as the API. |
+| `PRODUCTION` | `0` | `1` makes `seed --demo` refuse to run. |
 | `MEDIA_ROOT` | `./media` | Attachment storage (local filesystem). |
 | `REQUIRE_INDEPENDENT_VERIFICATION` | `True` | Verifier must differ from resolver (PRD §17). |
 | `ALLOW_MANAGER_DEVIATION` | `True` | Manager may approve past unverified non-blocking issues with a mandatory justification. |
@@ -410,12 +413,13 @@ manager approval. See `e2e/README.md`.
 
 ## API overview
 
-All endpoints are under `/api/` and require `Authorization: Bearer <access>`
-except `/api/health/` and `/api/auth/token/`.
+All endpoints are under `/api/` and require a signed-in session (unsafe methods
+also need the `X-CSRFToken` header from `/api/auth/csrf/`), except
+`/api/health/`, `/api/auth/csrf/` and `/api/auth/login/`.
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/auth/token/` · `…/refresh/` | Obtain / refresh JWT. Logins are audited. |
+| `GET /api/auth/csrf/` · `POST /api/auth/login/` · `POST /api/auth/logout/` · `GET /api/auth/me/` | Session sign-in (CSRF-protected, rate-limited, audited) and current user. |
 | `GET /api/users/me/` | Current user plus a resolved permission map. |
 | `GET/POST /api/fcs/` | List / register FCs. `?search=` matches serial, revision, batch. |
 | `GET /api/fcs/{id}/` | Detail incl. stage progress and approval blockers. |

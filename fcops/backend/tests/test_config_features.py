@@ -38,11 +38,10 @@ class ConfigTestCase(TestCase):
 
     def client_for(self, user):
         client = APIClient()
-        response = client.post("/api/auth/token/",
+        response = client.post("/api/auth/login/",
                                {"username": user.username, "password": PASSWORD},
                                format="json")
         assert response.status_code == 200, response.content
-        client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
         return client
 
 
@@ -566,7 +565,7 @@ class CapabilityFlagTests(ConfigTestCase):
         }
         for user, expected in expectations.items():
             with self.subTest(user=user.username):
-                response = self.client_for(user).get("/api/users/me/")
+                response = self.client_for(user).get("/api/auth/me/")
                 for flag, value in expected.items():
                     self.assertEqual(response.data["permissions"][flag], value,
                                      f"{user.username}.{flag}")
