@@ -1,0 +1,24 @@
+Traceback (most recent call last):
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\source\fcops\e2e\ui_walkthrough.py", line 74, in <module>
+    login(page, "hw.tech1")
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\source\fcops\e2e\ui_walkthrough.py", line 18, in login
+    page.click('button:has-text("Sign out")')
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\venv\Lib\site-packages\playwright\sync_api\_generated.py", line 9927, in click
+    self._sync(
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\venv\Lib\site-packages\playwright\_impl\_sync_base.py", line 115, in _sync
+    return task.result()
+           ^^^^^^^^^^^^^
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\venv\Lib\site-packages\playwright\_impl\_page.py", line 857, in click
+    return await self._main_frame.click(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\venv\Lib\site-packages\playwright\_impl\_frame.py", line 549, in click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\venv\Lib\site-packages\playwright\_impl\_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\venv\Lib\site-packages\playwright\_impl\_connection.py", line 559, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("button:has-text(\"Sign out\")")
+

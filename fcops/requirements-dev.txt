@@ -1,2 +1,4 @@
 # Development / test-only dependencies. Not needed to run the application.
 playwright==1.56.0
+time-machine==3.5.1
+factory_boy==3.3.3

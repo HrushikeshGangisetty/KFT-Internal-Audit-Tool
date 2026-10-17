@@ -1,0 +1,57 @@
+Creating test database for alias 'default'...
+Unauthorized: /api/auth/token/
+...Unauthorized: /api/fcs/
+.C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\venv\Lib\site-packages\rest_framework\pagination.py:198: UnorderedObjectListWarning: Pagination may yield inconsistent results with an unordered object_list: <class 'fc.models.FlightController'> QuerySet.
+  paginator = self.django_paginator_class(queryset, page_size)
+.Method Not Allowed: /api/fcs/2/
+..Forbidden: /api/departments/
+Forbidden: /api/departments/
+.Forbidden: /api/fcs/4/approve/
+.Forbidden: /api/issues/1/promote/
+...Conflict: /api/issues/3/status/
+Bad Request: /api/issues/3/reassign/
+..........Conflict: /api/fc-models/25/
+.Forbidden: /api/fc-models/
+Forbidden: /api/fc-models/
+Forbidden: /api/fc-models/
+Forbidden: /api/fc-models/
+...........Forbidden: /api/firmware-builds/
+Forbidden: /api/firmware-builds/
+Forbidden: /api/firmware-builds/
+Forbidden: /api/firmware-builds/
+..Conflict: /api/firmware-builds/11/
+..Bad Request: /api/software-updates/
+..Conflict: /api/software-updates/
+.Bad Request: /api/software-updates/
+..Forbidden: /api/software-updates/
+Forbidden: /api/software-updates/
+Forbidden: /api/software-updates/
+Forbidden: /api/software-updates/
+...Bad Request: /api/software-updates/
+.Method Not Allowed: /api/software-updates/7/
+Method Not Allowed: /api/software-updates/7/
+.....Forbidden: /api/checklist-items/
+Forbidden: /api/checklist-items/7/
+Forbidden: /api/checklist-items/7/set-active/
+Forbidden: /api/checklist-items/
+Forbidden: /api/checklist-items/7/
+Forbidden: /api/checklist-items/7/set-active/
+Forbidden: /api/checklist-items/
+Forbidden: /api/checklist-items/7/
+Forbidden: /api/checklist-items/7/set-active/
+Forbidden: /api/checklist-items/
+Forbidden: /api/checklist-items/7/
+Forbidden: /api/checklist-items/7/set-active/
+.Forbidden: /api/checklist-templates/5/reorder/
+..............................................Conflict: /api/parameter-files/compare/
+....Conflict: /api/parameter-files/
+.........................C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\source\fcops\backend\tests\test_db_config.py:169: UserWarning: Overriding setting DATABASES can lead to unexpected behavior.
+  with override_settings(DATABASES=databases):
+...........................
+----------------------------------------------------------------------
+Ran 155 tests in 247.775s
+
+OK
+Destroying test database for alias 'default'...
+Found 155 test(s).
+System check identified no issues (0 silenced).

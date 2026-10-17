@@ -1,0 +1,2 @@
+pg_ctl: server is running (PID: 22536)
+C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/postgres16/pgsql/bin/postgres.exe "-D" "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/pgdata" "-h" "127.0.0.1" "-p" "55432"

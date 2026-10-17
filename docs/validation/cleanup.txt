@@ -1,0 +1,15 @@
+backend exit=0
+SUCCESS: The process with PID 27872 (child process of PID 28272) has been terminated.
+SUCCESS: The process with PID 20744 (child process of PID 28272) has been terminated.
+SUCCESS: The process with PID 28272 (child process of PID 24272) has been terminated.
+
+frontend exit=0
+SUCCESS: The process with PID 10544 (child process of PID 27392) has been terminated.
+SUCCESS: The process with PID 27392 (child process of PID 24376) has been terminated.
+
+initial-setup-harness exit=0
+SUCCESS: The process with PID 16716 has been terminated.
+
+postgres-stop exit=0
+waiting for server to shut down.... done
+server stopped

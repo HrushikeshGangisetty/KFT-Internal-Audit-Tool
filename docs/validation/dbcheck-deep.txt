@@ -1,0 +1,29 @@
+Connection
+  [info] mode: local PostgreSQL
+  [info] host: 127.0.0.1
+  [info] port: 55432
+  [info] database: fcops_wp0
+  [info] user: fcops_wp0
+  [info] sslmode: disable
+  [info] conn_max_age: 60
+  [info] server_side_cursors: True
+  [ok]   connected
+  [info] server: PostgreSQL 16.15
+  [info] database=fcops_wp0 user=fcops_wp0 server=127.0.0.1/32
+  [info] open connections: 1 from this app, 1 total on this database
+Capabilities
+  [ok]   plpgsql (required by the audit trigger)
+  [ok]   to_tsvector / full-text search
+  [ok]   GIN index support
+  [ok]   jsonb
+Schema
+  [ok]   core_auditlogentry table
+  [ok]   append-only audit trigger
+  [ok]   issue search_vector GIN index
+  [ok]   known-issue GIN index
+Behaviour
+  [ok]   tsvector search ran over 5 issue(s), 1 hit(s) for 'gps not detected'
+  [ok]   audit log rejected a raw UPDATE
+  [ok]   audit log rejected a raw DELETE
+
+All database checks passed.

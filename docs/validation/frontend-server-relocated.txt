@@ -1,0 +1,10 @@
+
+  VITE v8.2.2  ready in 290 ms
+
+  ➜  Local:   http://127.0.0.1:55173/
+The request id "C:/Users/HRUSHI~1/AppData/Local/Temp/kft-wp0-frontend-pbs4mtlf/index.html" is outside of Vite serving allow list.
+
+- C:/Users/HRUSHI~1/AppData/Local/Temp/kft-wp0-frontend-pbs4mtlf
+
+Refer to docs https://vite.dev/config/server-options.html#server-fs-allow for configurations and more details.
+

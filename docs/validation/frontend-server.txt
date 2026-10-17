@@ -1,0 +1,40 @@
+
+  VITE v8.2.2  ready in 205 ms
+
+  ➜  Local:   http://127.0.0.1:55173/
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+
+- C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend
+
+Refer to docs https://vite.dev/config/server-options.html#server-fs-allow for configurations and more details.
+
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.
+The request id "C:/Users/Hrushikesh/Desktop/KFT_Internal_Audit/.git/wp0-runtime/source/fcops/frontend/index.html" is outside of Vite serving allow list.

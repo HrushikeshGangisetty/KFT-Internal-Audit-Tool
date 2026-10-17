@@ -1,0 +1,2 @@
+Seeded 10 departments, 12 users, 2 FC models.
+Demo data created.

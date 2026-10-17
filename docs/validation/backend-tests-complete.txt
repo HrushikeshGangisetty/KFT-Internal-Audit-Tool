@@ -1,0 +1,92 @@
+Creating test database for alias 'default'...
+Got an error creating the test database: database "test_fcops_wp0" already exists
+
+Destroying old test database for alias 'default'...
+Unauthorized: /api/auth/token/
+...Unauthorized: /api/fcs/
+.C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\venv\Lib\site-packages\rest_framework\pagination.py:198: UnorderedObjectListWarning: Pagination may yield inconsistent results with an unordered object_list: <class 'fc.models.FlightController'> QuerySet.
+  paginator = self.django_paginator_class(queryset, page_size)
+.Method Not Allowed: /api/fcs/2/
+..Forbidden: /api/departments/
+Forbidden: /api/departments/
+.Forbidden: /api/fcs/4/approve/
+.Forbidden: /api/issues/1/promote/
+...Conflict: /api/issues/3/status/
+Bad Request: /api/issues/3/reassign/
+..........Conflict: /api/fc-models/25/
+.Forbidden: /api/fc-models/
+Forbidden: /api/fc-models/
+Forbidden: /api/fc-models/
+Forbidden: /api/fc-models/
+...........Forbidden: /api/firmware-builds/
+Forbidden: /api/firmware-builds/
+Forbidden: /api/firmware-builds/
+Forbidden: /api/firmware-builds/
+..Conflict: /api/firmware-builds/11/
+..Bad Request: /api/software-updates/
+..Conflict: /api/software-updates/
+.Bad Request: /api/software-updates/
+..Forbidden: /api/software-updates/
+Forbidden: /api/software-updates/
+Forbidden: /api/software-updates/
+Forbidden: /api/software-updates/
+...Bad Request: /api/software-updates/
+.Method Not Allowed: /api/software-updates/7/
+Method Not Allowed: /api/software-updates/7/
+.....Forbidden: /api/checklist-items/
+Forbidden: /api/checklist-items/7/
+Forbidden: /api/checklist-items/7/set-active/
+Forbidden: /api/checklist-items/
+Forbidden: /api/checklist-items/7/
+Forbidden: /api/checklist-items/7/set-active/
+Forbidden: /api/checklist-items/
+Forbidden: /api/checklist-items/7/
+Forbidden: /api/checklist-items/7/set-active/
+Forbidden: /api/checklist-items/
+Forbidden: /api/checklist-items/7/
+Forbidden: /api/checklist-items/7/set-active/
+.Forbidden: /api/checklist-templates/5/reorder/
+..............................................Conflict: /api/parameter-files/compare/
+....Conflict: /api/parameter-files/
+.........................C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\source\fcops\backend\tests\test_db_config.py:169: UserWarning: Overriding setting DATABASES can lead to unexpected behavior.
+  with override_settings(DATABASES=databases):
+..............F.FF.........
+======================================================================
+FAIL: test_local_postgres_vars_are_reused_for_the_fallback (tests.test_db_config.TestDatabaseGuardTests.test_local_postgres_vars_are_reused_for_the_fallback)
+A developer who set up local PostgreSQL with their own credentials
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\source\fcops\backend\tests\test_db_config.py", line 250, in test_local_postgres_vars_are_reused_for_the_fallback
+    self.assertEqual(config["NAME"], "mylocal")
+AssertionError: 'fcops_wp0' != 'mylocal'
+- fcops_wp0
++ mylocal
+
+
+======================================================================
+FAIL: test_opt_in_allows_remote_test_database (tests.test_db_config.TestDatabaseGuardTests.test_opt_in_allows_remote_test_database)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\source\fcops\backend\tests\test_db_config.py", line 228, in test_opt_in_allows_remote_test_database
+    self.assertEqual(config["HOST"], "aws-0-ap-south-1.pooler.supabase.com")
+AssertionError: '127.0.0.1' != 'aws-0-ap-south-1.pooler.supabase.com'
+- 127.0.0.1
++ aws-0-ap-south-1.pooler.supabase.com
+
+
+======================================================================
+FAIL: test_redirected_fallback_is_flagged_for_the_test_runner (tests.test_db_config.TestDatabaseGuardTests.test_redirected_fallback_is_flagged_for_the_test_runner)
+GuardedTestRunner uses this flag to explain *why* it is pointing at
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Hrushikesh\Desktop\KFT_Internal_Audit\.git\wp0-runtime\source\fcops\backend\tests\test_db_config.py", line 238, in test_redirected_fallback_is_flagged_for_the_test_runner
+    self.assertTrue(config.get("_REDIRECTED_FROM_REMOTE"))
+AssertionError: None is not true
+
+----------------------------------------------------------------------
+Ran 155 tests in 251.246s
+
+FAILED (failures=3)
+Destroying test database for alias 'default'...
+Found 155 test(s).
+System check identified no issues (0 silenced).

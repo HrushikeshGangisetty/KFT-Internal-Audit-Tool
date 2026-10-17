@@ -1,0 +1,20 @@
+  ok: login as technician + dashboard renders
+  ok: FC list renders
+  ok: FC created via UI: FC-2026-00009
+  ok: lifecycle progressed Fabrication -> Ground Testing (8 stages)
+  ok: Ground Testing marked FAILED
+  ok: similar-issue panel surfaced prior issues live while typing
+  ok: issue created: ISS-2026-00006
+  ok: investigation note added (status auto-advanced to Investigating)
+  ok: RBAC upheld in the UI: technician refused — "Only a department lead, a manager, or a member of the curren..."
+  ok: issue reassigned by a department lead, with the reason recorded in the log
+  ok: root cause + resolution recorded (root-cause dept differs from discovery)
+  ok: fix verified by a second person, then closed
+  ok: rework recorded; FC routed back to Machine Assembly
+  ok: FC re-run through the lifecycle to Manager Approval
+  ok: timeline contains registration, failure, issue, reassignment, rework, verification
+  ok: technician is not offered the manager approval action
+  ok: manager approved the FC for release
+
+STEPS PASSED: 17
+PAGE ERRORS: none

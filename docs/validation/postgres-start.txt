@@ -1,0 +1,5 @@
+2026-10-17 21:19:07.347 IST [22536] LOG:  starting PostgreSQL 16.15, compiled by Visual C++ build 1944, 64-bit
+2026-10-17 21:19:07.348 IST [22536] LOG:  listening on IPv4 address "127.0.0.1", port 55432
+2026-10-17 21:19:07.377 IST [444] LOG:  database system was shut down at 2026-10-17 21:19:06 IST
+2026-10-17 21:19:07.393 IST [22536] LOG:  database system is ready to accept connections
+2026-10-17 21:22:54.309 IST [27708] ERROR:  core_auditlogentry is append-only (attempted UPDATE)
