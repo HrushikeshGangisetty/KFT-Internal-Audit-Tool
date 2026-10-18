@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
-import { Banner, Empty, Field, Loading, Tag } from '../components/ui.jsx'
+import { Banner, Card, Empty, Field, Loading, PageHeader, Tag } from '../components/ui.jsx'
 
 const BLANK = { name: '', code: '', description: '' }
 
@@ -63,22 +63,19 @@ export default function FcModels() {
 
   return (
     <>
-      <h2>FC Models</h2>
-      <p className="muted small" style={{ marginTop: -6 }}>
-        The models offered when registering a new flight controller. Models in use
-        are archived rather than deleted, so existing FCs keep a valid reference.
-      </p>
+      <PageHeader
+        title="FC Models"
+        subtitle="The models offered when registering a new flight controller. Models in use are archived rather than deleted, so existing FCs keep a valid reference."
+      />
 
       <Banner>{error}</Banner>
       <Banner kind="ok">{message}</Banner>
       {!canManage ? (
-        <div className="banner warn">
-          Only a manager can change FC models. You can read them below.
-        </div>
+        <Banner kind="warn">Only a manager can change FC models. You can read them below.</Banner>
       ) : null}
 
-      <div className="card">
-        {rows === null ? <Loading what="FC models" /> : null}
+      <Card flush>
+        {rows === null ? <Loading what="FC models" cols={5} /> : null}
         {rows?.length === 0 ? <Empty>No FC models defined.</Empty> : null}
         {rows?.length ? (
           <div className="table-wrap">
@@ -113,11 +110,10 @@ export default function FcModels() {
             </table>
           </div>
         ) : null}
-      </div>
+      </Card>
 
       {canManage ? (
-        <form className="card" onSubmit={submit}>
-          <h2>{editing ? `Edit ${editing.name}` : 'Add an FC model'}</h2>
+        <Card as="form" title={editing ? `Edit ${editing.name}` : 'Add an FC model'} onSubmit={submit}>
           <div className="grid cols-2">
             <Field label="Model name">
               <input value={form.name} onChange={set('name')} required
@@ -140,7 +136,7 @@ export default function FcModels() {
                       onClick={() => { setEditing(null); setForm(BLANK) }}>Cancel</button>
             ) : null}
           </div>
-        </form>
+        </Card>
       ) : null}
     </>
   )

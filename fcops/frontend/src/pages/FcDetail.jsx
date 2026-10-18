@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
 import {
-  Banner, Empty, Field, IssueLink, Loading, SeverityTag, StatusTag, Tag, humanize, when,
+  Banner, Card, Empty, Field, Icon, IssueLink, PageHeader, PageSkeleton, SeverityTag,
+  StatusTag, Tabs, Tag, humanize, when,
 } from '../components/ui.jsx'
 
 const TEST_STAGES = ['SENSOR_VALIDATION', 'BENCH_TESTING', 'GROUND_TESTING', 'FINAL_VALIDATION']
@@ -61,7 +62,7 @@ export default function FcDetail() {
   }
 
   if (error && !fc) return <Banner>{error}</Banner>
-  if (!fc) return <Loading what="FC" />
+  if (!fc) return <PageSkeleton split />
 
   const current = records.filter((r) => r.stage === fc.current_stage)
     .sort((a, b) => b.attempt - a.attempt)[0]
@@ -70,23 +71,26 @@ export default function FcDetail() {
 
   return (
     <>
-      <div className="row" style={{ marginBottom: 12 }}>
-        <h2 className="mono" style={{ margin: 0, fontSize: 20 }}>{fc.serial}</h2>
-        <StatusTag value={fc.status} />
-        <Tag>{fc.fc_model_name}</Tag>
-        {fc.hardware_revision ? <Tag>{fc.hardware_revision}</Tag> : null}
-        <div style={{ flex: 1 }} />
-        <Link className="btn" style={{ color: '#fff', padding: '8px 14px' }}
-              to={`/issues/new?fc=${fc.id}&stage=${fc.current_stage}`}>
-          Report an issue
-        </Link>
-      </div>
+      <PageHeader
+        mono
+        title={fc.serial}
+        meta={<>
+          <StatusTag value={fc.status} />
+          <Tag>{fc.fc_model_name}</Tag>
+          {fc.hardware_revision ? <Tag>{fc.hardware_revision}</Tag> : null}
+          <span className="small muted">at {fc.stage_label || humanize(fc.current_stage)}</span>
+        </>}
+        actions={
+          <Link className="btn" to={`/issues/new?fc=${fc.id}&stage=${fc.current_stage}`}>
+            <Icon name="alert" />Report an issue
+          </Link>
+        }
+      />
 
       <Banner>{error}</Banner>
       <Banner kind="ok">{message}</Banner>
 
-      <div className="card">
-        <h2>Lifecycle progress</h2>
+      <Card title="Lifecycle progress">
         <div className="stage-strip">
           {fc.stage_progress.map((s) => (
             <div key={s.stage}
@@ -97,34 +101,27 @@ export default function FcDetail() {
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       <div className="split">
         <div>
-          <div className="card">
-            <div className="row" style={{ marginBottom: 10 }}>
-              {['timeline', 'stages', 'issues', 'firmware', 'test', 'audit'].map((t) => (
-                <button key={t} className={tab === t ? '' : 'secondary'}
-                        onClick={() => setTab(t)}>
-                  {humanize(t)}
-                </button>
-              ))}
-            </div>
-
+          <Card tabs={
+            <Tabs inCard value={tab} onChange={setTab}
+                  tabs={['timeline', 'stages', 'issues', 'firmware', 'test', 'audit']} />
+          }>
             {tab === 'timeline' ? <Timeline events={timeline} /> : null}
             {tab === 'stages' ? <StageRecords records={records} fc={fc} meta={meta} onDone={reload} /> : null}
             {tab === 'issues' ? <IssuesTable issues={issues} /> : null}
             {tab === 'firmware' ? <FirmwareTab fc={fc} current={current} onDone={reload} /> : null}
             {tab === 'test' ? <TestTab fc={fc} current={current} onDone={reload} /> : null}
             {tab === 'audit' ? <AuditTable rows={auditRows} /> : null}
-          </div>
+          </Card>
         </div>
 
         <div>
-          <div className="card">
-            <h2>Current stage</h2>
-            <p style={{ marginTop: 0 }}>
-              <strong>{humanize(fc.current_stage)}</strong>{' '}
+          <Card title="Current stage">
+            <p className="row" style={{ marginTop: 0, gap: 8 }}>
+              <strong>{humanize(fc.current_stage)}</strong>
               {current ? <StatusTag value={current.status} /> : null}
               {current?.attempt > 1 ? <span className="muted small"> attempt {current.attempt}</span> : null}
             </p>
@@ -180,10 +177,9 @@ export default function FcDetail() {
                 </ul>
               </div>
             ) : null}
-          </div>
+          </Card>
 
-          <div className="card">
-            <h2>Record</h2>
+          <Card title="Record">
             <dl className="kv">
               <dt>Model</dt><dd>{fc.fc_model_name}</dd>
               <dt>Revision</dt><dd>{fc.hardware_revision || '—'}</dd>
@@ -197,7 +193,7 @@ export default function FcDetail() {
                 <dd>{when(fc.approved_at)} by {fc.approved_by_name}</dd></>) : null}
             </dl>
             {fc.notes ? <p className="small muted" style={{ marginBottom: 0 }}>{fc.notes}</p> : null}
-          </div>
+          </Card>
         </div>
       </div>
     </>

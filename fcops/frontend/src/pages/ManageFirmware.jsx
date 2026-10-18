@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
-import { Banner, Empty, Field, Loading, Tag, when } from '../components/ui.jsx'
+import { Banner, Card, Empty, Field, Icon, Loading, PageHeader, Tag, when } from '../components/ui.jsx'
 
 const BLANK = {
   name: '', firmware_type: 'APJ', version: '', git_sha: '', build_datetime: '',
@@ -96,30 +96,21 @@ export default function ManageFirmware() {
 
   return (
     <>
-      <div className="row" style={{ marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>Manage Firmware</h2>
-        <div style={{ flex: 1 }} />
-        {canManage ? <button onClick={startCreate}>Add firmware build</button> : null}
-      </div>
-      <p className="muted small" style={{ marginTop: -4 }}>
-        The catalogue of builds that can be flashed onto an FC. When a build is
-        flashed, its details are copied onto that FC's own record — so an FC's
-        history always shows exactly what went on it, even after a build is edited
-        or retired.
-      </p>
+      <PageHeader
+        title="Manage Firmware"
+        subtitle="The catalogue of builds that can be flashed onto an FC. When a build is flashed, its details are copied onto that FC's own record — so an FC's history always shows exactly what went on it, even after a build is edited or retired."
+        actions={canManage ? <button onClick={startCreate}><Icon name="plus" />Add firmware build</button> : null}
+      />
 
       <Banner>{error}</Banner>
       <Banner kind="ok">{message}</Banner>
 
       {!canManage ? (
-        <div className="banner warn">
-          Only the Firmware department can change the catalogue. You can read it below.
-        </div>
+        <Banner kind="warn">Only the Firmware department can change the catalogue. You can read it below.</Banner>
       ) : null}
 
       {showForm && canManage ? (
-        <form className="card" onSubmit={submit}>
-          <h2>{editing ? `Edit ${editing.name} ${editing.version}` : 'Add a firmware build'}</h2>
+        <Card as="form" title={editing ? `Edit ${editing.name} ${editing.version}` : 'Add a firmware build'} onSubmit={submit}>
           <div className="grid cols-3">
             <Field label="Firmware name">
               <input value={form.name} onChange={set('name')} required />
@@ -192,11 +183,10 @@ export default function ManageFirmware() {
             <button type="button" className="secondary"
                     onClick={() => { setShowForm(false); setEditing(null) }}>Cancel</button>
           </div>
-        </form>
+        </Card>
       ) : null}
 
-      <div className="card">
-        <div className="row" style={{ marginBottom: 10 }}>
+      <Card title="Firmware catalogue" flush actions={<>
           <input placeholder="Search name, version, SHA…" style={{ maxWidth: 280 }}
                  value={filters.search}
                  onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
@@ -206,7 +196,7 @@ export default function ManageFirmware() {
             <option value="true">Active only</option>
             <option value="false">Retired only</option>
           </select>
-        </div>
+        </>}>
 
         {rows === null ? <Loading what="firmware catalogue" /> : null}
         {rows?.length === 0 ? <Empty>No firmware builds yet.</Empty> : null}
@@ -255,21 +245,12 @@ export default function ManageFirmware() {
             </table>
           </div>
         ) : null}
-      </div>
+      </Card>
 
       {detail ? (
-        <div className="card">
-          <div className="row">
-            <h2 style={{ margin: 0 }}>
-              {detail.build.name} {detail.build.version} — flashed onto
-            </h2>
-            <div style={{ flex: 1 }} />
-            <button className="secondary" onClick={() => setDetail(null)}>Close</button>
-          </div>
-          <p className="small muted">
-            These records were copied at flash time and are unaffected by later
-            edits to the catalogue entry.
-          </p>
+        <Card flush title={`${detail.build.name} ${detail.build.version} — flashed onto`}
+              subtitle="These records were copied at flash time and are unaffected by later edits to the catalogue entry."
+              actions={<button className="secondary sm" onClick={() => setDetail(null)}>Close</button>}>
           <div className="table-wrap">
             <table>
               <thead><tr><th>FC</th><th>Version recorded</th><th>Signed</th>
@@ -287,7 +268,7 @@ export default function ManageFirmware() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
       ) : null}
     </>
   )

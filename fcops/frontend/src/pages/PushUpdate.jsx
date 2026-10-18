@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
-import { Banner, Empty, Field, Loading, Tag, when } from '../components/ui.jsx'
+import { Banner, Card, Empty, Field, Loading, PageHeader, Tag, when } from '../components/ui.jsx'
 
 const BLANK = {
   kind: 'GCS', version: '', git_sha: '', release_notes: '', approved_by: '',
@@ -54,19 +54,16 @@ export default function PushUpdate() {
 
   return (
     <>
-      <h2>Push Update</h2>
-      <p className="muted small" style={{ marginTop: -6 }}>
-        The internal release record for our GCS and Configurator. Every entry ties
-        a version people are running to the exact commit that produced it, and to
-        the person who signed it off. It records a release — it does not deploy one.
-      </p>
+      <PageHeader
+        title="Push Update"
+        subtitle="The internal release record for our GCS and Configurator. Every entry ties a version people are running to the exact commit that produced it, and to the person who signed it off. It records a release — it does not deploy one."
+      />
 
       <Banner>{error}</Banner>
       <Banner kind="ok">{message}</Banner>
 
       {canPush ? (
-        <form className="card" onSubmit={submit}>
-          <h2>Record a new release</h2>
+        <Card as="form" title="Record a new release" onSubmit={submit}>
           <div className="grid cols-3">
             <Field label="Software">
               <select value={form.kind} onChange={set('kind')}>
@@ -107,18 +104,14 @@ export default function PushUpdate() {
               Version, commit SHA, notes and an approver are all required.
             </span>
           ) : null}
-        </form>
+        </Card>
       ) : (
-        <div className="banner warn">
-          Only the Software department can record a release. You can still read
-          the history below.
-        </div>
+        <Banner kind="warn">Only the Software department can record a release. You can still read
+          the history below.</Banner>
       )}
 
-      <div className="card">
-        <div className="row" style={{ marginBottom: 10 }}>
-          <h2 style={{ margin: 0 }}>Release history</h2>
-          <div style={{ flex: 1 }} />
+      <Card title="Release history" flush actions={<>
+
           <select value={filters.kind} style={{ maxWidth: 180 }}
                   onChange={(e) => setFilters((f) => ({ ...f, kind: e.target.value }))}>
             <option value="">All software</option>
@@ -128,7 +121,7 @@ export default function PushUpdate() {
           <input placeholder="Search version, SHA or notes…" style={{ maxWidth: 260 }}
                  value={filters.search}
                  onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
-        </div>
+        </>}>
 
         {rows === null ? <Loading what="release history" /> : null}
         {rows?.length === 0 ? <Empty>No releases recorded yet.</Empty> : null}
@@ -169,7 +162,7 @@ export default function PushUpdate() {
             </table>
           </div>
         ) : null}
-      </div>
+      </Card>
     </>
   )
 }

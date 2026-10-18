@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, listOf } from '../lib/api'
-import { Banner, Empty, Loading, humanize, when } from '../components/ui.jsx'
+import { Banner, Card, Empty, Loading, PageHeader, Tag, humanize, when } from '../components/ui.jsx'
 
 export default function AuditLog() {
   const [rows, setRows] = useState(null)
@@ -18,12 +18,11 @@ export default function AuditLog() {
 
   return (
     <>
-      <h2>Audit log</h2>
-      <p className="muted small" style={{ marginTop: -6 }}>
-        Append-only. Entries cannot be edited or deleted by anyone, including admins —
-        the database refuses the write.
-      </p>
-      <div className="card">
+      <PageHeader
+        title="Audit log"
+        subtitle="Append-only. Entries cannot be edited or deleted by anyone, including admins — the database refuses the write."
+      />
+      <Card className="filter-bar">
         <div className="grid cols-2">
           <div className="field">
             <label>Entity type</label>
@@ -45,10 +44,10 @@ export default function AuditLog() {
             </select>
           </div>
         </div>
-      </div>
+      </Card>
       <Banner>{error}</Banner>
-      <div className="card">
-        {rows === null ? <Loading what="audit entries" /> : null}
+      <Card flush>
+        {rows === null ? <Loading what="audit entries" cols={6} /> : null}
         {rows?.length === 0 ? <Empty /> : null}
         {rows?.length ? (
           <div className="table-wrap">
@@ -59,7 +58,7 @@ export default function AuditLog() {
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td className="small muted" style={{ whiteSpace: 'nowrap' }}>{when(r.created_at)}</td>
-                    <td className="small">{humanize(r.action)}</td>
+                    <td><Tag>{humanize(r.action)}</Tag></td>
                     <td className="small">{r.entity_type}<div className="muted">{r.entity_label}</div></td>
                     <td className="small mono">{r.fc_serial || '—'}</td>
                     <td className="small">{r.actor_name}</td>
@@ -74,7 +73,7 @@ export default function AuditLog() {
             </table>
           </div>
         ) : null}
-      </div>
+      </Card>
     </>
   )
 }

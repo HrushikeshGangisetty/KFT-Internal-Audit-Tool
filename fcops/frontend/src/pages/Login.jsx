@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../lib/auth.jsx'
-import { Banner, Field } from '../components/ui.jsx'
+import { Banner, Card, Field } from '../components/ui.jsx'
 
 export default function Login() {
   const { login } = useAuth()
@@ -24,11 +24,12 @@ export default function Login() {
 
   return (
     <div className="login-wrap">
-      <form className="card login-card" onSubmit={submit}>
-        <h2>Sign in</h2>
-        <p className="muted small">
-          FC Production, Traceability &amp; Engineering Knowledge System
-        </p>
+      <div className="login-card">
+      <div className="login-brand">
+        <div className="brand-mark">FC</div>
+        <div className="brand-name">FC Knowledge System<small>Production · Traceability · Issues</small></div>
+      </div>
+      <Card as="form" title="Sign in" subtitle="Use your engineering account credentials." onSubmit={submit}>
         <Banner>{error}</Banner>
         <Field label="Username">
           <input value={username} onChange={(e) => setUsername(e.target.value)}
@@ -41,7 +42,8 @@ export default function Login() {
         <button disabled={busy || !username || !password} style={{ width: '100%' }}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-      </form>
+      </Card>
+      </div>
     </div>
   )
 }

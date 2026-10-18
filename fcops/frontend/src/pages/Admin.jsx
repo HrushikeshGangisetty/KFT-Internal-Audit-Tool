@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, listOf } from '../lib/api'
-import { Banner, Empty, Field, Tag, humanize } from '../components/ui.jsx'
+import { Banner, Card, Empty, Field, Loading, PageHeader, Tabs, Tag, humanize } from '../components/ui.jsx'
 
 export default function Admin() {
   const [tab, setTab] = useState('users')
   return (
     <>
-      <h2>Administration</h2>
-      <div className="row" style={{ marginBottom: 14 }}>
-        {['users', 'departments', 'models', 'software', 'checklists'].map((t) => (
-          <button key={t} className={tab === t ? '' : 'secondary'} onClick={() => setTab(t)}>
-            {humanize(t)}
-          </button>
-        ))}
-      </div>
+      <PageHeader title="Administration" subtitle="Users, departments and reference data." />
+      <Tabs value={tab} onChange={setTab}
+            tabs={['users', 'departments', 'models', 'software', 'checklists']} />
       {tab === 'users' ? <Users /> : null}
       {tab === 'departments' ? <Departments /> : null}
       {tab === 'models' ? <FcModels /> : null}
@@ -25,17 +20,19 @@ export default function Admin() {
 
 function useList(path, params) {
   const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const load = useCallback(() => {
     api(path, { params: { page_size: 200, ...params } })
       .then((d) => setRows(listOf(d))).catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
   }, [path, JSON.stringify(params)])
   useEffect(() => { load() }, [load])
-  return { rows, error, setError, load }
+  return { rows, loading, error, setError, load }
 }
 
 function Users() {
-  const { rows, error, setError, load } = useList('/api/users/')
+  const { rows, loading, error, setError, load } = useList('/api/users/')
   const departments = useList('/api/departments/').rows
   const [roles, setRoles] = useState([])
   const [form, setForm] = useState({ username: '', full_name: '', email: '', role: 'TECHNICIAN', department: '', password: '' })
@@ -64,9 +61,8 @@ function Users() {
   return (
     <>
       <Banner>{error}</Banner>
-      <div className="card">
-        <h2>Users</h2>
-        <div className="table-wrap">
+      <Card title="Users" flush>
+        {loading ? <Loading /> : (<div className="table-wrap">
           <table>
             <thead><tr><th>Username</th><th>Name</th><th>Department</th><th>Role</th><th>Active</th></tr></thead>
             <tbody>
@@ -86,10 +82,9 @@ function Users() {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-      <form className="card" onSubmit={submit}>
-        <h2>Add a user</h2>
+        </div>)}
+      </Card>
+      <Card as="form" title="Add a user" onSubmit={submit} footer={<button disabled={busy || !form.username}>Create user</button>}>
         <div className="grid cols-3">
           <Field label="Username"><input value={form.username} onChange={set('username')} required /></Field>
           <Field label="Full name"><input value={form.full_name} onChange={set('full_name')} /></Field>
@@ -107,14 +102,13 @@ function Users() {
           </Field>
           <Field label="Initial password"><input type="password" value={form.password} onChange={set('password')} /></Field>
         </div>
-        <button disabled={busy || !form.username}>Create user</button>
-      </form>
+      </Card>
     </>
   )
 }
 
 function Departments() {
-  const { rows, error, setError, load } = useList('/api/departments/')
+  const { rows, loading, error, setError, load } = useList('/api/departments/')
   const [form, setForm] = useState({ name: '', code: '', kind: 'HARDWARE' })
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const submit = async (e) => {
@@ -125,9 +119,8 @@ function Departments() {
   return (
     <>
       <Banner>{error}</Banner>
-      <div className="card">
-        <h2>Departments</h2>
-        <div className="table-wrap">
+      <Card title="Departments" flush>
+        {loading ? <Loading /> : (<div className="table-wrap">
           <table>
             <thead><tr><th>Name</th><th>Code</th><th>Kind</th><th>Members</th></tr></thead>
             <tbody>
@@ -137,10 +130,9 @@ function Departments() {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-      <form className="card" onSubmit={submit}>
-        <h2>Add a department</h2>
+        </div>)}
+      </Card>
+      <Card as="form" title="Add a department" onSubmit={submit} footer={<button>Create department</button>}>
         <div className="grid cols-3">
           <Field label="Name"><input value={form.name} onChange={set('name')} required /></Field>
           <Field label="Code"><input value={form.code} onChange={set('code')} required /></Field>
@@ -151,14 +143,13 @@ function Departments() {
             </select>
           </Field>
         </div>
-        <button>Create department</button>
-      </form>
+      </Card>
     </>
   )
 }
 
 function FcModels() {
-  const { rows, error, setError, load } = useList('/api/fc-models/')
+  const { rows, loading, error, setError, load } = useList('/api/fc-models/')
   const [form, setForm] = useState({ name: '', code: '' })
   const submit = async (e) => {
     e.preventDefault()
@@ -168,30 +159,27 @@ function FcModels() {
   return (
     <>
       <Banner>{error}</Banner>
-      <div className="card">
-        <h2>FC models</h2>
-        {rows.length === 0 ? <Empty /> : null}
-        <div className="table-wrap">
+      <Card title="FC models" flush>
+        {!loading && rows.length === 0 ? <Empty /> : null}
+        {loading ? <Loading /> : (<div className="table-wrap">
           <table><thead><tr><th>Name</th><th>Code</th></tr></thead>
             <tbody>{rows.map((m) => (
               <tr key={m.id}><td>{m.name}</td><td className="mono small">{m.code}</td></tr>))}
             </tbody></table>
-        </div>
-      </div>
-      <form className="card" onSubmit={submit}>
-        <h2>Add an FC model</h2>
+        </div>)}
+      </Card>
+      <Card as="form" title="Add an FC model" onSubmit={submit} footer={<button>Create model</button>}>
         <div className="grid cols-2">
           <Field label="Name"><input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required /></Field>
           <Field label="Code"><input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} required /></Field>
         </div>
-        <button>Create model</button>
-      </form>
+      </Card>
     </>
   )
 }
 
 function SoftwareVersions() {
-  const { rows, error, setError, load } = useList('/api/software-versions/')
+  const { rows, loading, error, setError, load } = useList('/api/software-versions/')
   const [form, setForm] = useState({ kind: 'GCS', version: '' })
   const submit = async (e) => {
     e.preventDefault()
@@ -201,18 +189,16 @@ function SoftwareVersions() {
   return (
     <>
       <Banner>{error}</Banner>
-      <div className="card">
-        <h2>GCS / Configurator versions</h2>
-        <p className="muted small">Maintained by the Software department; selected on test records and issues.</p>
-        <div className="table-wrap">
+      <Card title="GCS / Configurator versions" flush
+            subtitle="Maintained by the Software department; selected on test records and issues.">
+        {loading ? <Loading /> : (<div className="table-wrap">
           <table><thead><tr><th>Kind</th><th>Version</th><th>Active</th></tr></thead>
             <tbody>{rows.map((v) => (
               <tr key={v.id}><td>{v.kind}</td><td className="mono">{v.version}</td>
-                <td>{v.is_active ? 'Yes' : 'No'}</td></tr>))}</tbody></table>
-        </div>
-      </div>
-      <form className="card" onSubmit={submit}>
-        <h2>Add a version</h2>
+                <td>{v.is_active ? <Tag tone="ok">Active</Tag> : <Tag>Inactive</Tag>}</td></tr>))}</tbody></table>
+        </div>)}
+      </Card>
+      <Card as="form" title="Add a version" onSubmit={submit} footer={<button>Add version</button>}>
         <div className="grid cols-2">
           <Field label="Kind">
             <select value={form.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}>
@@ -221,20 +207,18 @@ function SoftwareVersions() {
           </Field>
           <Field label="Version"><input value={form.version} onChange={(e) => setForm((f) => ({ ...f, version: e.target.value }))} required /></Field>
         </div>
-        <button>Add version</button>
-      </form>
+      </Card>
     </>
   )
 }
 
 function Checklists() {
-  const { rows, error } = useList('/api/checklist-templates/')
+  const { rows, loading, error } = useList('/api/checklist-templates/')
   return (
     <>
       <Banner>{error}</Banner>
-      <div className="card">
-        <h2>Test checklist templates</h2>
-        {rows.length === 0 ? <Empty /> : null}
+      <Card title="Test checklist templates">
+        {loading ? <Loading variant="text" rows={4} /> : rows.length === 0 ? <Empty /> : null}
         {rows.map((t) => (
           <div className="note" key={t.id}>
             <strong>{t.name}</strong> <Tag>{humanize(t.stage)}</Tag>
@@ -243,7 +227,7 @@ function Checklists() {
             </ul>
           </div>
         ))}
-      </div>
+      </Card>
     </>
   )
 }

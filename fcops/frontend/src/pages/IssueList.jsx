@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
-import { Banner, Empty, FcLink, IssueLink, Loading, SeverityTag, StatusTag, when } from '../components/ui.jsx'
+import {
+  Banner, Card, Empty, FcLink, Icon, IssueLink, Loading, PageHeader, SeverityTag, StatusTag, Tag, when,
+} from '../components/ui.jsx'
 
 export default function IssueList() {
   const [rows, setRows] = useState(null)
@@ -34,15 +36,13 @@ export default function IssueList() {
 
   return (
     <>
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h2 style={{ margin: 0 }}>Issues</h2>
-        <div style={{ flex: 1 }} />
-        <Link className="btn" to="/issues/new" style={{ color: '#fff', padding: '8px 14px' }}>
-          Report an issue
-        </Link>
-      </div>
+      <PageHeader
+        title="Issues"
+        subtitle="Problems raised across production, testing and the field."
+        actions={<Link className="btn" to="/issues/new"><Icon name="plus" />Report an issue</Link>}
+      />
 
-      <div className="card">
+      <Card className="filter-bar">
         <div className="grid cols-3">
           <div className="field">
             <label>Full-text search</label>
@@ -85,11 +85,11 @@ export default function IssueList() {
             </select>
           </div>
         </div>
-      </div>
+      </Card>
 
       <Banner>{error}</Banner>
-      <div className="card">
-        {rows === null ? <Loading what="issues" /> : null}
+      <Card flush>
+        {rows === null ? <Loading what="issues" cols={8} /> : null}
         {rows?.length === 0 ? <Empty>No issues match these filters.</Empty> : null}
         {rows?.length ? (
           <div className="table-wrap">
@@ -104,8 +104,8 @@ export default function IssueList() {
                     <td><IssueLink id={i.id} label={i.key} /></td>
                     <td><FcLink id={i.fc} serial={i.fc_serial} /></td>
                     <td>{i.title}
-                      {i.is_recurring ? <> <span className="tag warn">recurring</span></> : null}
-                      {i.is_waiting ? <> <span className="tag">waiting</span></> : null}
+                      {i.is_recurring ? <> <Tag tone="warn">recurring</Tag></> : null}
+                      {i.is_waiting ? <> <Tag>waiting</Tag></> : null}
                     </td>
                     <td className="small">{i.stage_label}<br />
                       <span className="muted">{i.discovering_department_name}</span></td>
@@ -120,7 +120,7 @@ export default function IssueList() {
             </table>
           </div>
         ) : null}
-      </div>
+      </Card>
     </>
   )
 }

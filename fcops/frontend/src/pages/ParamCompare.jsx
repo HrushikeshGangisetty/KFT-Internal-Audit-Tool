@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, getTokens, listOf } from '../lib/api'
-import { Banner, Empty, Field, Tag, when } from '../components/ui.jsx'
+import { Banner, Card, Empty, Field, PageHeader, StatCard, Tag, when } from '../components/ui.jsx'
 
 const TOLERANCES = [
   { value: 0, label: 'Show every difference' },
@@ -82,16 +82,14 @@ export default function ParamCompare() {
 
   return (
     <>
-      <h2>Parameter Compare</h2>
-      <p className="muted small" style={{ marginTop: -6 }}>
-        Diff two <span className="mono">.param</span> dumps. Upload them directly
-        for a quick check, or pick dumps already stored against an FC. Comparing
-        1,100 lines by eye is how a wrong tuning value reaches a test flight.
-      </p>
+      <PageHeader
+        title="Parameter Compare"
+        subtitle={<>Diff two <span className="mono">.param</span> dumps. Upload them directly for a quick check, or pick dumps already stored against an FC. Comparing 1,100 lines by eye is how a wrong tuning value reaches a test flight.</>}
+      />
 
       <Banner>{error}</Banner>
 
-      <form className="card" onSubmit={run}>
+      <Card as="form" onSubmit={run}>
         <div className="grid cols-2">
           <Side side="Left" stored={stored} pick={leftPick} onPick={setLeftPick}
                 file={leftFile} onFile={setLeftFile} />
@@ -111,35 +109,22 @@ export default function ParamCompare() {
             Choose or upload a file on each side.
           </span>
         ) : null}
-      </form>
+      </Card>
 
       {result ? (
         <>
-          <div className="card">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0 }}>
-                <span className="mono">{result.left_name}</span>
-                <span className="muted"> vs </span>
-                <span className="mono">{result.right_name}</span>
-              </h2>
-            </div>
-            <div className="grid cols-4" style={{ marginTop: 12 }}>
-              <div className="stat">
-                <div className="n">{result.summary.changed}</div>
-                <div className="l">Different values</div>
-              </div>
-              <div className="stat">
-                <div className="n">{result.summary.only_in_left + result.summary.only_in_right}</div>
-                <div className="l">Only on one side</div>
-              </div>
-              <div className="stat">
-                <div className="n">{result.summary.identical}</div>
-                <div className="l">Identical</div>
-              </div>
-              <div className="stat">
-                <div className="n">{result.summary.groups_touched.length}</div>
-                <div className="l">Groups affected</div>
-              </div>
+          <Card title={<>
+            <span className="mono">{result.left_name}</span>
+            <span className="muted"> vs </span>
+            <span className="mono">{result.right_name}</span>
+          </>}>
+            <div className="grid cols-4">
+              <StatCard label="Different values" value={result.summary.changed}
+                        tone={result.summary.changed ? 'warn' : ''} />
+              <StatCard label="Only on one side"
+                        value={result.summary.only_in_left + result.summary.only_in_right} />
+              <StatCard label="Identical" value={result.summary.identical} tone="ok" />
+              <StatCard label="Groups affected" value={result.summary.groups_touched.length} />
             </div>
             {result.summary.changed === 0 && result.summary.only_in_left === 0
               && result.summary.only_in_right === 0 ? (
@@ -155,20 +140,19 @@ export default function ParamCompare() {
             ) : null}
             <div className="row small" style={{ marginTop: 12 }}>
               <span className="muted">Groups:</span>
-              <button type="button" className={group ? 'secondary' : ''}
-                      style={{ padding: '2px 10px', fontSize: 12 }}
+              <button type="button" className={group ? 'secondary sm' : 'sm'}
+                      
                       onClick={() => setGroup('')}>All</button>
               {result.summary.groups_touched.map((g) => (
                 <button type="button" key={g}
-                        className={group === g ? '' : 'secondary'}
-                        style={{ padding: '2px 10px', fontSize: 12 }}
+                        className={group === g ? 'sm' : 'secondary sm'}
+                        
                         onClick={() => setGroup(g === group ? '' : g)}>{g}</button>
               ))}
             </div>
-          </div>
+          </Card>
 
-          <div className="card">
-            <div className="row" style={{ marginBottom: 10 }}>
+          <Card title="Differences" flush actions={<>
               <input placeholder="Filter by parameter name…" style={{ maxWidth: 300 }}
                      value={filter} onChange={(e) => setFilter(e.target.value)} />
               <label className="row small" style={{ marginBottom: 0 }}>
@@ -176,9 +160,8 @@ export default function ParamCompare() {
                        onChange={(e) => setShowNegligible(e.target.checked)} />
                 Include negligible differences
               </label>
-              <div style={{ flex: 1 }} />
               <span className="small muted">{rows.length} shown</span>
-            </div>
+            </>}>
             {rows.length === 0 ? <Empty>No differences match this filter.</Empty> : (
               <div className="table-wrap">
                 <table>
@@ -218,15 +201,11 @@ export default function ParamCompare() {
                 </table>
               </div>
             )}
-          </div>
+          </Card>
         </>
       ) : null}
 
-      <div className="card">
-        <h2>Stored dumps</h2>
-        <p className="small muted" style={{ marginTop: 0 }}>
-          Upload a dump against an FC to keep it in that FC's history.
-        </p>
+      <Card title="Stored dumps" subtitle="Upload a dump against an FC to keep it in that FC's history.">
         <UploadForm onDone={loadStored} />
         {stored.length === 0 ? <Empty>Nothing stored yet.</Empty> : (
           <div className="table-wrap" style={{ marginTop: 12 }}>
@@ -248,7 +227,7 @@ export default function ParamCompare() {
             </table>
           </div>
         )}
-      </div>
+      </Card>
     </>
   )
 }

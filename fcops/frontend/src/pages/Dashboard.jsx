@@ -1,26 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
-import { Banner, Empty, FcLink, IssueLink, Loading, SeverityTag, StatusTag, humanize } from '../components/ui.jsx'
-
-function Bar({ label, value, max, tone }) {
-  const pct = max ? Math.round((value / max) * 100) : 0
-  return (
-    <div style={{ marginBottom: 8 }}>
-      <div className="row small" style={{ justifyContent: 'space-between' }}>
-        <span>{label}</span>
-        <span className="muted">{value}</span>
-      </div>
-      <div style={{ background: 'var(--surface-2)', borderRadius: 4, height: 8 }}>
-        <div style={{
-          width: `${pct}%`, height: 8, borderRadius: 4,
-          background: tone === 'bad' ? 'var(--bad)' : 'var(--accent)',
-          minWidth: value ? 4 : 0,
-        }} />
-      </div>
-    </div>
-  )
-}
+import {
+  Banner, Card, Empty, FcLink, IssueLink, Icon, Meter, PageHeader, PageSkeleton, SeverityTag,
+  StatCard, StatusTag, humanize,
+} from '../components/ui.jsx'
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
@@ -30,55 +14,64 @@ export default function Dashboard() {
     api('/api/dashboard/summary/').then(setData).catch((e) => setError(e.message))
   }, [])
 
-  if (error) return <Banner>{error}</Banner>
-  if (!data) return <Loading what="dashboard" />
+  const header = (
+    <PageHeader
+      title="Dashboard"
+      subtitle="Production health, blocked units and open engineering issues at a glance."
+      actions={<>
+        <Link className="btn secondary" to="/issues/new"><Icon name="alert" />Report issue</Link>
+        <Link className="btn" to="/fcs/new"><Icon name="plus" />Register FC</Link>
+      </>}
+    />
+  )
+  if (error) return <>{header}<Banner>{error}</Banner></>
+  if (!data) return <PageSkeleton stats={4} />
 
   const maxStage = Math.max(1, ...data.fc_by_stage.map((s) => s.count))
   const maxDept = Math.max(1, ...data.issues_by_department.map((d) => d.n))
 
   return (
     <>
-      <div className="grid cols-4" style={{ marginBottom: 18 }}>
-        <div className="stat"><div className="n">{data.fc_total}</div><div className="l">FCs total</div></div>
-        <div className="stat"><div className="n">{data.blocked.length}</div><div className="l">FCs blocked</div></div>
-        <div className="stat"><div className="n">{data.open_issue_total}</div><div className="l">Open issues</div></div>
-        <div className="stat">
-          <div className="n">{data.avg_resolution_hours ?? '—'}</div>
-          <div className="l">Avg resolution (h)</div>
-        </div>
+      {header}
+      <div className="grid cols-4 section">
+        <StatCard icon="chip" label="FCs total" value={data.fc_total} />
+        <StatCard icon="alert" label="FCs blocked" value={data.blocked.length}
+                  tone={data.blocked.length ? 'bad' : ''} />
+        <StatCard icon="inbox" label="Open issues" value={data.open_issue_total}
+                  tone={data.open_issue_total ? 'warn' : ''} />
+        <StatCard icon="history" label="Avg resolution" value={data.avg_resolution_hours ?? '—'}
+                  hint="hours, open → resolved" />
       </div>
 
-      <div className="grid cols-2">
-        <div className="card">
-          <h2>FCs by lifecycle stage</h2>
+      <div className="grid cols-2 section">
+        <Card title="FCs by lifecycle stage">
           {data.fc_by_stage.map((s) => (
-            <Bar key={s.stage} label={s.label} value={s.count} max={maxStage} />
+            <Meter key={s.stage} label={s.label} value={s.count} max={maxStage} />
           ))}
-        </div>
+        </Card>
 
-        <div className="card">
-          <h2>Open issues by assigned department</h2>
+        <Card title="Open issues by assigned department">
           {data.issues_by_department.length === 0 ? <Empty>No open issues.</Empty> : null}
           {data.issues_by_department.map((d) => (
-            <Bar key={d.assigned_department__name || 'unassigned'}
+            <Meter key={d.assigned_department__name || 'unassigned'}
                  label={d.assigned_department__name || 'Unassigned'}
                  value={d.n} max={maxDept} tone="bad" />
           ))}
-          <h3 style={{ marginTop: 18 }}>By severity</h3>
+          <h3 style={{ marginTop: 20 }}>By severity</h3>
           <div className="row">
             {data.issues_by_severity.map((s) => (
               <span key={s.severity}><SeverityTag value={s.severity} /> {s.n}</span>
             ))}
             {data.issues_by_severity.length === 0 ? <Empty>None.</Empty> : null}
           </div>
-        </div>
+        </Card>
       </div>
 
-      <div className="card">
-        <h2>Blocked FCs — and why</h2>
-        {data.blocked.length === 0 ? <Empty>Nothing is blocked right now.</Empty> : null}
-        <div className="table-wrap">
+      <Card title="Blocked FCs — and why" subtitle="Units held at a stage by open blocking issues" flush>
+        {data.blocked.length === 0 ? <Empty icon="check">Nothing is blocked right now.</Empty> : null}
+        {data.blocked.length ? <div className="table-wrap">
           <table>
+            <thead><tr><th>FC</th><th>Stage</th><th>Blocking issues</th></tr></thead>
             <tbody>
               {data.blocked.map((fc) => (
                 <tr key={fc.id}>
@@ -98,50 +91,47 @@ export default function Dashboard() {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
+        </div> : null}
+      </Card>
 
-      <div className="grid cols-2">
-        <div className="card">
-          <h2>Average time in stage (h)</h2>
-          {data.avg_time_in_stage.length === 0 ? <Empty /> : null}
+      <div className="grid cols-2 section">
+        <Card title="Average time in stage" subtitle="Hours spent per lifecycle stage" flush>
+          {data.avg_time_in_stage.length === 0 ? <div className="card-body"><Empty /></div> : null}
           <div className="table-wrap">
             <table>
               <tbody>
                 {data.avg_time_in_stage.map((s) => (
-                  <tr key={s.stage}><td>{s.label}</td><td>{s.avg_hours}</td></tr>
+                  <tr key={s.stage}><td>{s.label}</td><td style={{ textAlign: 'right' }}>{s.avg_hours} h</td></tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-        <div className="card">
-          <h2>Where issues are discovered (last {data.window_days} days)</h2>
-          {data.issues_by_discovery_stage.length === 0 ? <Empty /> : null}
+        </Card>
+        <Card title="Where issues are discovered" subtitle={`Last ${data.window_days} days`} flush>
+          {data.issues_by_discovery_stage.length === 0 ? <div className="card-body"><Empty /></div> : null}
           <div className="table-wrap">
             <table>
               <tbody>
                 {data.issues_by_discovery_stage.map((s) => (
                   <tr key={s.discovered_stage}>
-                    <td>{humanize(s.discovered_stage)}</td><td>{s.n}</td>
+                    <td>{humanize(s.discovered_stage)}</td><td style={{ textAlign: 'right' }}>{s.n}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <h3 style={{ marginTop: 16 }}>Reworks per FC</h3>
-          {data.reworks_per_fc.length === 0 ? <Empty /> : null}
+          <div className="card-body" style={{ borderTop: '1px solid var(--border)' }}>
+          <h3 style={{ marginTop: 0 }}>Reworks per FC</h3>
+          {data.reworks_per_fc.length === 0 ? <Empty>No reworks recorded.</Empty> : null}
           <div className="row small">
             {data.reworks_per_fc.map((r) => (
-              <span key={r.fc__serial} className="tag">{r.fc__serial}: {r.n}</span>
+              <span key={r.fc__serial} className="tag mono">{r.fc__serial} · {r.n}</span>
             ))}
           </div>
-        </div>
+          </div>
+        </Card>
       </div>
 
-      <p className="small muted">
-        <Link to="/fcs/new">Register a new FC</Link> · <Link to="/issues/new">Report an issue</Link>
-      </p>
     </>
   )
 }

@@ -1,21 +1,19 @@
-import { IssueLink, StatusTag, Tag, humanize } from '../components/ui.jsx'
+import { Empty, IssueLink, Loading, StatusTag, Tag, humanize } from '../components/ui.jsx'
 
 export default function SimilarPanel({ result, loading }) {
-  if (loading) return <p className="muted small">Searching history…</p>
+  if (loading) return <Loading what="similar issues" variant="text" rows={5} />
   if (!result) {
-    return <p className="muted small">
-      Start typing a symptom — matching past issues will appear here.
-    </p>
+    return <Empty icon="search">Start typing a symptom — matching past issues will appear here.</Empty>
   }
   const { similar_issues: issues = [], known_issues: known = [] } = result
   if (!issues.length && !known.length) {
-    return <p className="muted small">No similar historical issues found.</p>
+    return <Empty icon="check">No similar historical issues found.</Empty>
   }
   return (
     <>
       {known.length ? (
         <>
-          <h3>Known issues</h3>
+          <h3 style={{ marginTop: 0 }}>Known issues</h3>
           {known.map((k) => (
             <div key={k.id} className="note">
               <div><strong>{k.title}</strong> <Tag tone="info">{k.occurrence_count ?? 0} occurrences</Tag></div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
-import { Banner, Empty, FcLink, Loading, StatusTag, when } from '../components/ui.jsx'
+import { Banner, Card, Empty, FcLink, Icon, Loading, PageHeader, StatusTag, when } from '../components/ui.jsx'
 
 export default function FcList() {
   const [rows, setRows] = useState(null)
@@ -24,15 +24,13 @@ export default function FcList() {
 
   return (
     <>
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h2 style={{ margin: 0 }}>Flight Controllers</h2>
-        <div className="spacer" style={{ flex: 1 }} />
-        <Link className="btn" to="/fcs/new" style={{ padding: '8px 14px', color: '#fff' }}>
-          Register FC
-        </Link>
-      </div>
+      <PageHeader
+        title="Flight Controllers"
+        subtitle="Every registered unit, its lifecycle stage and current status."
+        actions={<Link className="btn" to="/fcs/new"><Icon name="plus" />Register FC</Link>}
+      />
 
-      <div className="card">
+      <Card className="filter-bar">
         <div className="grid cols-3">
           <div className="field">
             <label>Search</label>
@@ -57,11 +55,11 @@ export default function FcList() {
             </select>
           </div>
         </div>
-      </div>
+      </Card>
 
       <Banner>{error}</Banner>
-      <div className="card">
-        {rows === null ? <Loading what="FCs" /> : null}
+      <Card flush>
+        {rows === null ? <Loading what="FCs" cols={7} /> : null}
         {rows?.length === 0 ? <Empty>No FCs match these filters.</Empty> : null}
         {rows?.length ? (
           <div className="table-wrap">
@@ -88,7 +86,7 @@ export default function FcList() {
             </table>
           </div>
         ) : null}
-      </div>
+      </Card>
     </>
   )
 }
