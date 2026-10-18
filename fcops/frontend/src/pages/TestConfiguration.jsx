@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
-import { Banner, Empty, Field, Loading, Tag, humanize } from '../components/ui.jsx'
+import { Banner, Card, Empty, Field, PageHeader, SkeletonCard, Tag, humanize } from '../components/ui.jsx'
 
 const BLANK = { key: '', label: '', description: '', is_mandatory: true }
 
@@ -79,23 +79,19 @@ export default function TestConfiguration() {
 
   return (
     <>
-      <h2>Test Configuration</h2>
-      <p className="muted small" style={{ marginTop: -6 }}>
-        The checklists testers see when they run a stage. Changes apply to future
-        tests only — every completed test keeps a copy of the items that were
-        actually answered, and the checklist version they belonged to.
-      </p>
+      <PageHeader
+        title="Test Configuration"
+        subtitle="The checklists testers see when they run a stage. Changes apply to future tests only — every completed test keeps a copy of the items that were actually answered, and the checklist version they belonged to."
+      />
 
       <Banner>{error}</Banner>
       <Banner kind="ok">{message}</Banner>
       {!canConfigure ? (
-        <div className="banner warn">
-          Only a manager can change test configuration. You can read it below.
-        </div>
+        <Banner kind="warn">Only a manager can change test configuration. You can read it below.</Banner>
       ) : null}
 
-      <div className="card">
-        <div className="row">
+      <Card className="filter-bar">
+        <div className="row" style={{ alignItems: 'flex-end' }}>
           <Field label="Checklist">
             <select value={selectedId ?? ''} style={{ minWidth: 340 }}
                     onChange={(e) => setSelectedId(Number(e.target.value))}>
@@ -107,22 +103,19 @@ export default function TestConfiguration() {
             </select>
           </Field>
           {template ? (
-            <div style={{ paddingTop: 14 }}>
-              <Tag tone="info">version {template.version}</Tag>{' '}
+            <div className="row" style={{ gap: 6, paddingBottom: 8 }}>
+              <Tag tone="info">version {template.version}</Tag>
               <Tag>{humanize(template.stage)}</Tag>
             </div>
           ) : null}
         </div>
-      </div>
+      </Card>
 
-      {templates === null ? <Loading what="checklists" /> : null}
-      {templates?.length === 0 ? (
-        <div className="card"><Empty>No checklists configured.</Empty></div>
-      ) : null}
+      {templates === null ? <SkeletonCard lines={6} /> : null}
+      {templates?.length === 0 ? <Empty>No checklists configured.</Empty> : null}
 
       {template ? (
-        <div className="card">
-          <h2>Tests in “{template.name}”</h2>
+        <Card title={`Tests in “${template.name}”`}>
           {items.length === 0 ? <Empty>No tests defined yet.</Empty> : null}
           {items.length ? (
             <div className="table-wrap">
@@ -220,7 +213,7 @@ export default function TestConfiguration() {
               </div>
             </form>
           ) : null}
-        </div>
+        </Card>
       ) : null}
     </>
   )

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
-import { Banner, Field } from '../components/ui.jsx'
+import { Banner, Card, Field, PageHeader } from '../components/ui.jsx'
 import SimilarPanel from './SimilarPanel.jsx'
 
 export default function IssueCreate() {
@@ -87,9 +87,17 @@ export default function IssueCreate() {
   }
 
   return (
+    <>
+    <PageHeader
+      title="Report an issue"
+      subtitle="Describe what was observed. Similar past issues are suggested as you type."
+    />
     <div className="split">
-      <form className="card" onSubmit={submit}>
-        <h2>Report an issue</h2>
+      <Card as="form" title="Issue details" onSubmit={submit} footer={
+        <button disabled={busy || !form.fc || !form.title || !form.symptoms}>
+          {busy ? 'Creating…' : 'Create issue'}
+        </button>
+      }>
         <Banner>{error}</Banner>
         <div className="grid cols-2">
           <Field label="Flight controller">
@@ -142,15 +150,12 @@ export default function IssueCreate() {
           <Field label="GCS version"><input value={form.gcs_version} onChange={set('gcs_version')} /></Field>
           <Field label="Configurator version"><input value={form.configurator_version} onChange={set('configurator_version')} /></Field>
         </div>
-        <button disabled={busy || !form.fc || !form.title || !form.symptoms}>
-          {busy ? 'Creating…' : 'Create issue'}
-        </button>
-      </form>
+      </Card>
 
-      <div className="card">
-        <h2>Has this happened before?</h2>
+      <Card title="Has this happened before?" subtitle="Matches from historical issues">
         <SimilarPanel result={similar} loading={searching} />
-      </div>
+      </Card>
     </div>
+    </>
   )
 }

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
 import {
-  Banner, Empty, FcLink, Field, Loading, SeverityTag, StatusTag, Tag, humanize, when,
+  Banner, Card, Empty, FcLink, Field, Icon, PageHeader, PageSkeleton, SeverityTag, StatusTag,
+  Tag, humanize, when,
 } from '../components/ui.jsx'
 import SimilarPanel from './SimilarPanel.jsx'
 
@@ -47,41 +48,44 @@ export default function IssueDetail() {
   }
 
   if (error && !issue) return <Banner>{error}</Banner>
-  if (!issue) return <Loading what="issue" />
+  if (!issue) return <PageSkeleton split />
 
   const can = user?.permissions || {}
   const allowed = issue.allowed_transitions || []
 
   return (
     <>
-      <div className="row" style={{ marginBottom: 12 }}>
-        <h2 className="mono" style={{ margin: 0, fontSize: 20 }}>{issue.key}</h2>
-        <StatusTag value={issue.status} />
-        <SeverityTag value={issue.severity} />
-        <Tag>{humanize(issue.category)}</Tag>
-        {issue.is_recurring ? <Tag tone="warn">recurring</Tag> : null}
-        {issue.is_waiting ? <Tag>waiting: {issue.waiting_reason}</Tag> : null}
-      </div>
-      <p style={{ marginTop: 0, fontSize: 17 }}>{issue.title}</p>
+      <PageHeader
+        title={issue.title}
+        meta={<>
+          <span className="mono small muted">{issue.key}</span>
+          <StatusTag value={issue.status} />
+          <SeverityTag value={issue.severity} />
+          <Tag>{humanize(issue.category)}</Tag>
+          {issue.is_recurring ? <Tag tone="warn">recurring</Tag> : null}
+          {issue.is_waiting ? <Tag>waiting: {issue.waiting_reason}</Tag> : null}
+        </>}
+        actions={<Link className="btn secondary" to={`/fcs/${issue.fc}`}>
+          <Icon name="chip" />{issue.fc_serial}
+        </Link>}
+      />
 
       <Banner>{error}</Banner>
       <Banner kind="ok">{message}</Banner>
 
       <div className="split">
         <div>
-          <div className="card">
-            <h2>Symptoms</h2>
-            <p style={{ whiteSpace: 'pre-wrap' }}>{issue.symptoms}</p>
+          <Card title="Symptoms">
+            <p style={{ whiteSpace: 'pre-wrap', marginTop: 0 }}>{issue.symptoms}</p>
             {issue.description ? (
               <>
                 <h3>Description</h3>
                 <p style={{ whiteSpace: 'pre-wrap' }}>{issue.description}</p>
               </>
             ) : null}
-          </div>
+          </Card>
 
-          <div className="card">
-            <h2>Investigation log</h2>
+          <Card title="Investigation log">
             {issue.investigation_notes.length === 0 ? <Empty>No notes yet.</Empty> : null}
             {issue.investigation_notes.map((n) => (
               <div key={n.id} className="note">
@@ -103,10 +107,9 @@ export default function IssueDetail() {
                   })}>Add note</button>
               </>
             ) : <p className="muted small">Closed issues are read-only.</p>}
-          </div>
+          </Card>
 
-          <div className="card">
-            <h2>Root cause &amp; resolution</h2>
+          <Card title="Root cause & resolution">
             {issue.root_cause ? (
               <dl className="kv" style={{ marginBottom: 12 }}>
                 <dt>Root cause</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{issue.root_cause}</dd>
@@ -147,10 +150,9 @@ export default function IssueDetail() {
                   }))}>Mark resolved</button>
               </>
             ) : null}
-          </div>
+          </Card>
 
-          <div className="card">
-            <h2>Reassignment history</h2>
+          <Card title="Reassignment history">
             {issue.reassignments.length === 0 ? <Empty /> : null}
             <ul className="timeline">
               {issue.reassignments.map((r) => (
@@ -192,12 +194,11 @@ export default function IssueDetail() {
                         })}>Reassign</button>
               </>
             ) : null}
-          </div>
+          </Card>
         </div>
 
         <div>
-          <div className="card">
-            <h2>Discovery vs. ownership</h2>
+          <Card title="Discovery vs. ownership">
             <dl className="kv">
               <dt>FC</dt><dd><FcLink id={issue.fc} serial={issue.fc_serial} /></dd>
               <dt>Discovered at</dt><dd>{issue.stage_label}</dd>
@@ -208,7 +209,7 @@ export default function IssueDetail() {
               <dt>Root cause dept</dt><dd>{issue.root_cause_department_name || '— not determined —'}</dd>
               <dt>Opened</dt><dd>{when(issue.created_at)}</dd>
             </dl>
-          </div>
+          </Card>
 
           <div className="card">
             <h2>Participants</h2>
@@ -241,8 +242,7 @@ export default function IssueDetail() {
             ) : null}
           </div>
 
-          <div className="card">
-            <h2>Versions at discovery</h2>
+          <Card title="Versions at discovery">
             <dl className="kv">
               <dt>Hardware</dt><dd className="mono">{issue.hardware_revision || '—'}</dd>
               <dt>Firmware</dt><dd className="mono">{issue.firmware_version || '—'}</dd>
@@ -250,10 +250,9 @@ export default function IssueDetail() {
               <dt>GCS</dt><dd className="mono">{issue.gcs_version || '—'}</dd>
               <dt>Configurator</dt><dd className="mono">{issue.configurator_version || '—'}</dd>
             </dl>
-          </div>
+          </Card>
 
-          <div className="card">
-            <h2>Actions</h2>
+          <Card title="Actions">
             <div className="row">
               {allowed.includes('INVESTIGATING') ? (
                 <button className="secondary" disabled={busy} onClick={() => run(() =>
@@ -303,17 +302,15 @@ export default function IssueDetail() {
                 ({issue.known_issue_detail.occurrence_count} occurrences)
               </p>
             ) : null}
-          </div>
+          </Card>
 
-          <div className="card">
-            <h2>Attachments</h2>
+          <Card title="Attachments">
             <Attachments issue={issue} onDone={reload} />
-          </div>
+          </Card>
 
-          <div className="card">
-            <h2>Similar past issues</h2>
+          <Card title="Similar past issues">
             <SimilarPanel result={similar} loading={!similar} />
-          </div>
+          </Card>
         </div>
       </div>
     </>

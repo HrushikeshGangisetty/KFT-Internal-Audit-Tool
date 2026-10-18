@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
-import { Banner, Field } from '../components/ui.jsx'
+import { Banner, Card, Field, PageHeader } from '../components/ui.jsx'
 
 export default function FcCreate() {
   const navigate = useNavigate()
@@ -34,12 +34,14 @@ export default function FcCreate() {
   }
 
   return (
-    <form className="card" style={{ maxWidth: 620 }} onSubmit={submit}>
-      <h2>Register a new flight controller</h2>
-      <p className="muted small">
-        A serial number is assigned automatically in the form FC-YYYY-NNNNN. The FC
-        starts at Fabrication.
-      </p>
+    <div style={{ maxWidth: 680 }}>
+    <PageHeader
+      title="Register a flight controller"
+      subtitle="A serial number is assigned automatically in the form FC-YYYY-NNNNN. The FC starts at Fabrication."
+    />
+    <Card as="form" title="Unit details" onSubmit={submit} footer={
+      <button disabled={busy || !form.fc_model}>{busy ? 'Registering…' : 'Register FC'}</button>
+    }>
       <Banner>{error}</Banner>
       <Field label="FC model">
         <select value={form.fc_model} onChange={set('fc_model')}>
@@ -55,7 +57,7 @@ export default function FcCreate() {
       <Field label="Notes">
         <textarea value={form.notes} onChange={set('notes')} />
       </Field>
-      <button disabled={busy || !form.fc_model}>{busy ? 'Registering…' : 'Register FC'}</button>
-    </form>
+    </Card>
+    </div>
   )
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, listOf } from '../lib/api'
-import { Banner, Empty, Field, FcLink, IssueLink, SeverityTag, StatusTag, when } from '../components/ui.jsx'
+import {
+  Banner, Card, Empty, FcLink, Field, Icon, IssueLink, Loading, PageHeader, SeverityTag, StatusTag, Tag, when,
+} from '../components/ui.jsx'
 
 export default function Search() {
   const [meta, setMeta] = useState({ statuses: [], severities: [], categories: [] })
@@ -36,12 +38,13 @@ export default function Search() {
 
   return (
     <>
-      <h2>Knowledge search</h2>
-      <p className="muted small" style={{ marginTop: -6 }}>
-        Has this happened before? Search every issue ever recorded — symptoms, root
-        causes and resolutions — plus structured filters.
-      </p>
-      <form className="card" onSubmit={run}>
+      <PageHeader
+        title="Knowledge search"
+        subtitle="Has this happened before? Search every issue ever recorded — symptoms, root causes and resolutions — plus structured filters."
+      />
+      <Card as="form" onSubmit={run} footer={
+        <button disabled={busy}><Icon name="search" />{busy ? 'Searching…' : 'Search'}</button>
+      }>
         <Field label="Symptom / keyword">
           <input value={filters.q} onChange={set('q')} autoFocus
                  placeholder="e.g. GPS not detected after flashing" />
@@ -76,27 +79,24 @@ export default function Search() {
           <Field label="GCS version"><input value={filters.gcs_version} onChange={set('gcs_version')} /></Field>
           <Field label="Configurator version"><input value={filters.configurator_version} onChange={set('configurator_version')} /></Field>
         </div>
-        <button disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
-      </form>
+      </Card>
 
       <Banner>{error}</Banner>
 
       {known.length ? (
-        <div className="card">
-          <h2>Known issues matching</h2>
+        <Card title="Known issues matching">
           {known.map((k) => (
             <div className="note" key={k.id}>
-              <strong>{k.title}</strong> <span className="tag info">{k.occurrence_count} occurrences</span>
+              <strong>{k.title}</strong> <Tag tone="info">{k.occurrence_count} occurrences</Tag>
               <div className="small">{k.symptoms_summary}</div>
               <div className="small"><strong>Fix:</strong> {k.resolution}</div>
             </div>
           ))}
-        </div>
+        </Card>
       ) : null}
 
-      <div className="card">
-        <h2>Matching issues ({rows.length})</h2>
-        {rows.length === 0 ? <Empty>No results yet — run a search above.</Empty> : (
+      <Card title="Matching issues" actions={<Tag>{rows.length}</Tag>} flush>
+        {busy ? <Loading what="results" cols={7} /> : rows.length === 0 ? <Empty icon="search">No results yet — run a search above.</Empty> : (
           <div className="table-wrap">
             <table>
               <thead><tr><th>Key</th><th>FC</th><th>Title</th><th>Root cause</th>
@@ -117,7 +117,7 @@ export default function Search() {
             </table>
           </div>
         )}
-      </div>
+      </Card>
     </>
   )
 }

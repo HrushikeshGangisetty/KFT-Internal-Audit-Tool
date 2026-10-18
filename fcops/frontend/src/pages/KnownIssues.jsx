@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, listOf } from '../lib/api'
-import { Banner, Empty, IssueLink, Loading, Tag, humanize, when } from '../components/ui.jsx'
+import {
+  Banner, Card, Empty, IssueLink, PageHeader, SkeletonCard, Tag, humanize, when,
+} from '../components/ui.jsx'
 
 export default function KnownIssues() {
   const [rows, setRows] = useState(null)
@@ -28,34 +30,31 @@ export default function KnownIssues() {
 
   return (
     <>
-      <h2>Known issues</h2>
-      <p className="muted small" style={{ marginTop: -6 }}>
-        Curated reference entries promoted from resolved issues. Every raw resolved
-        issue stays searchable whether or not it was promoted.
-      </p>
-      <div className="card">
+      <PageHeader
+        title="Known issues"
+        subtitle="Curated reference entries promoted from resolved issues. Every raw resolved issue stays searchable whether or not it was promoted."
+      />
+      <Card className="filter-bar">
         <div className="field">
           <label>Search</label>
           <input value={q} onChange={(e) => setQ(e.target.value)}
                  placeholder="Symptom, root cause, resolution…" />
         </div>
-      </div>
+      </Card>
       <Banner>{error}</Banner>
-      {rows === null ? <Loading what="known issues" /> : null}
-      {rows?.length === 0 ? <div className="card"><Empty>Nothing promoted yet.</Empty></div> : null}
+      {rows === null ? <><SkeletonCard /><SkeletonCard /></> : null}
+      {rows?.length === 0 ? <Empty icon="book">Nothing promoted yet.</Empty> : null}
       {rows?.map((k) => (
-        <div className="card" key={k.id}>
-          <div className="row">
-            <h2 style={{ margin: 0 }}>{k.title}</h2>
-            <Tag tone="info">{k.occurrence_count} occurrences</Tag>
-            <Tag>{humanize(k.category)}</Tag>
-            {k.owning_department_name ? <Tag>{k.owning_department_name}</Tag> : null}
-            <div style={{ flex: 1 }} />
-            <button className="link" onClick={() => expand(k)}>
-              {open === k.id ? 'Hide occurrences' : 'Show occurrences'}
-            </button>
-          </div>
-          <dl className="kv" style={{ marginTop: 10 }}>
+        <Card key={k.id} title={k.title}
+              subtitle={<span className="row" style={{ gap: 6, marginTop: 4 }}>
+                <Tag tone="info">{k.occurrence_count} occurrences</Tag>
+                <Tag>{humanize(k.category)}</Tag>
+                {k.owning_department_name ? <Tag>{k.owning_department_name}</Tag> : null}
+              </span>}
+              actions={<button className="secondary sm" onClick={() => expand(k)}>
+                {open === k.id ? 'Hide occurrences' : 'Show occurrences'}
+              </button>}>
+          <dl className="kv">
             <dt>Symptoms</dt><dd>{k.symptoms_summary}</dd>
             <dt>Root cause</dt><dd>{k.root_cause}</dd>
             <dt>Resolution</dt><dd>{k.resolution}</dd>
@@ -67,7 +66,7 @@ export default function KnownIssues() {
             <dt>Promoted</dt><dd className="small muted">{k.promoted_by_name} · {when(k.created_at)}</dd>
           </dl>
           {open === k.id ? (
-            <div className="table-wrap" style={{ marginTop: 10 }}>
+            <div className="table-wrap" style={{ marginTop: 16 }}>
               <table>
                 <thead><tr><th>Issue</th><th>FC</th><th>Discovered</th><th>Status</th><th>Opened</th></tr></thead>
                 <tbody>
@@ -84,7 +83,7 @@ export default function KnownIssues() {
               </table>
             </div>
           ) : null}
-        </div>
+        </Card>
       ))}
     </>
   )

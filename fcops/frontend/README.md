@@ -1,4 +1,27 @@
-# React + Vite
+# FC Ops frontend
+
+## UI design system
+
+All styling lives in `src/index.css` (tokens on `:root`, then components); all shared
+React primitives live in `src/components/ui.jsx`. New screens should be assembled from
+these instead of ad-hoc markup or inline styles.
+
+- **Tokens**: colours (`--accent`, `--ok/warn/bad` + `-soft`), spacing `--space-*`,
+  radii `--radius*`, shadows `--shadow*`. Change a token, not a component.
+- **Page**: start every page with `<PageHeader title subtitle meta actions />`.
+- **Surfaces**: `<Card title subtitle actions footer flush tabs as="form">`. Use `flush`
+  for tables, `footer` for form submit buttons, `className="filter-bar"` for filter rows.
+- **Data**: `<StatCard label value tone hint icon />`, `<Meter />`, `<Tabs />`, `<Tag tone />`,
+  `<StatusTag />`, `<SeverityTag />`.
+- **Feedback**: `<Banner kind>` for errors/notices, `<Empty title icon>` for empty states.
+- **Loading**: never show "Loading…" text. Use `<Loading />` (table skeleton, or
+  `variant="text"`), `<SkeletonCard />`, or `<PageSkeleton stats split />` for whole pages.
+- **Buttons**: native `<button>` / `<Link className="btn">`; modifiers `secondary`,
+  `danger`, `ok`, `link`, `sm`, `icon-btn`.
+- **Icons**: `<Icon name>` from the inline set in `ui.jsx`; add a path there rather than
+  adding an icon dependency.
+
+## Vite template notes
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
