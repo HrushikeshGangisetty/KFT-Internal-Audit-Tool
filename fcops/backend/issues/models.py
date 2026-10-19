@@ -204,6 +204,10 @@ class Issue(TimeStampedModel):
     acknowledged_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="acknowledged_issues")
+    # WP6: each change of owner starts a fresh escalation sequence, keyed by
+    # the epoch, timed from owner_since.
+    owner_epoch = models.PositiveIntegerField(default=0)
+    owner_since = models.DateTimeField(null=True, blank=True)
 
     # --- ownership / root cause (can change, always logged) ---
     assigned_department = models.ForeignKey(
@@ -233,6 +237,8 @@ class Issue(TimeStampedModel):
     is_waiting = models.BooleanField(default=False,
                                      help_text="Waiting on parts/person (flag, not a status)")
     waiting_reason = models.CharField(max_length=255, blank=True)
+    waiting_dependency_owner = models.CharField(max_length=255, blank=True)
+    waiting_next_followup_at = models.DateTimeField(null=True, blank=True)
 
     # --- versions captured at discovery time (PRD §9) ---
     hardware_revision = models.CharField(max_length=64, blank=True, db_index=True)
@@ -282,10 +288,19 @@ class Issue(TimeStampedModel):
 
 
 class IssueInvestigationNote(models.Model):
-    """Append-only investigation log (PRD §9)."""
+    """Append-only, typed investigation log (PRD §9, WP7). Correcting a note
+    adds a new one that ``supersedes`` it; the original stays."""
+
+    TYPES = ("observation", "suspected_cause", "confirmed_cause", "workaround",
+             "permanent_fix", "general")
 
     issue = models.ForeignKey(Issue, on_delete=models.CASCADE,
                               related_name="investigation_notes")
+    note_type = models.CharField(max_length=16, choices=[(t, t) for t in TYPES],
+                                 default="general")
+    supersedes = models.ForeignKey("self", null=True, blank=True,
+                                   on_delete=models.PROTECT,
+                                   related_name="superseded_by")
     author = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
                                on_delete=models.SET_NULL,
                                related_name="investigation_notes")
@@ -439,7 +454,9 @@ class IssueEvent(models.Model):
     TYPES = ("submitted", "routed", "assigned", "notified", "acknowledged",
              "handoff_proposed", "handoff_accepted", "handoff_rejected",
              "ownership_accepted", "waiting_set", "waiting_cleared",
-             "reminder_sent", "escalated", "unit_linked", "blocks_stage_set")
+             "reminder_sent", "escalated", "unit_linked", "blocks_stage_set",
+             "coverage_gap", "resolved", "verified", "verification_failed",
+             "reopened", "evidence_linked")
 
     issue = models.ForeignKey(Issue, on_delete=models.PROTECT, related_name="events")
     type = models.CharField(max_length=24, choices=[(t, t) for t in TYPES],
@@ -496,3 +513,62 @@ class Handoff(models.Model):
     @property
     def to_queue(self):
         return Queue.objects.filter(department_id=self.to_department_id).first()
+
+
+# --- WP6: deadlines ------------------------------------------------------------
+class DeadlinePolicy(models.Model):
+    """Acknowledgement target and escalation steps per urgency (data, not
+    code). ``escalation_steps`` is a list of
+    ``{"after_minutes": n, "to": "owner"|"backup"|"manager", "channels":
+    "urgent"|"normal"}``, measured on the policy's clock. PLACEHOLDER values
+    are seeded by migration until the PRD decision."""
+
+    urgency = models.CharField(max_length=8, unique=True)
+    ack_target_minutes = models.PositiveIntegerField()
+    ack_uses_working_hours = models.BooleanField(default=False)
+    followup_interval_minutes = models.PositiveIntegerField()
+    escalation_steps = models.JSONField(default=list)
+
+    def __str__(self):
+        return self.urgency
+
+
+# --- WP7: resolution and verification -----------------------------------------
+class Resolution(models.Model):
+    """What was done. A confirmed root cause is not required."""
+
+    CONFIRMED, SUSPECTED, UNKNOWN, MITIGATED = (
+        "confirmed", "suspected", "unknown", "mitigated_only")
+    ROOT_CAUSE_CHOICES = [(c, c) for c in (CONFIRMED, SUSPECTED, UNKNOWN, MITIGATED)]
+
+    issue = models.ForeignKey(Issue, on_delete=models.PROTECT, related_name="resolutions")
+    resolved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                    related_name="+")
+    at = models.DateTimeField(default=timezone.now)
+    change_summary = models.TextField()
+    root_cause_status = models.CharField(max_length=16, choices=ROOT_CAUSE_CHOICES)
+    workaround = models.TextField(blank=True)
+    evidence_links = models.JSONField(default=list, blank=True)
+    affected_versions = models.TextField(blank=True)
+    affected_units = models.TextField(blank=True)
+    unresolved_risks = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ("at", "id")
+
+
+class Verification(models.Model):
+    PASS, FAIL = "pass", "fail"
+
+    resolution = models.ForeignKey(Resolution, on_delete=models.PROTECT,
+                                   related_name="verifications")
+    verifier = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                 related_name="+")
+    at = models.DateTimeField(default=timezone.now)
+    what_tested = models.TextField()
+    evidence = models.TextField(blank=True)
+    result = models.CharField(max_length=4, choices=[(PASS, "Pass"), (FAIL, "Fail")])
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ("at", "id")

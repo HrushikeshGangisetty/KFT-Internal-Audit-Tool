@@ -619,3 +619,167 @@ class ChecklistItemViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
             self.get_object(), actor=request.user,
             is_active=s.validated_data["is_active"])
         return Response(ChecklistItemSerializer(item).data)
+
+
+# --- WP8: parameter files and configuration evidence --------------------------
+from django.http import FileResponse  # noqa: E402
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser  # noqa: E402
+
+from . import evidence as evidence_svc  # noqa: E402
+from . import parameters as param_parser  # noqa: E402
+from .models import ConfigEvidence, ParameterComparison, ParameterFile  # noqa: E402
+from .serializers import (ConfigEvidenceSerializer,  # noqa: E402
+                          ParameterCompareSerializer, ParameterComparisonSerializer,
+                          ParameterFileSerializer)
+
+
+class ParameterFileViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Uploaded ``.param`` dumps (bytes stored once, by SHA-256), and the
+    quick comparison between any two of them. Follows FC scope."""
+
+    serializer_class = ParameterFileSerializer
+    permission_classes = [CanWriteProduction]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    filterset_fields = ("fc", "parameter_profile", "sha256")
+
+    def get_scoped_queryset(self):
+        # The parsed parameters and raw text are large and never needed for a
+        # listing.
+        return policy.scope_by_fc(self.request.user, ParameterFile.objects.select_related(
+            "fc", "uploaded_by", "parameter_profile")).defer("parameters", "raw_text")
+
+    def create(self, request, *args, **kwargs):
+        upload = request.FILES.get("file")
+        if upload is None:
+            raise WorkflowError("Attach a .param file to upload.", code="file_required")
+        fc_id = request.data.get("fc")
+        fc = get_object_or_404(policy.visible_fcs(request.user), pk=fc_id) if fc_id else None
+        record, created, skipped = evidence_svc.store_parameter_file(
+            upload, actor=request.user, label=request.data.get("label", ""), fc=fc,
+            parameter_profile=ParameterProfile.objects.filter(
+                pk=request.data.get("parameter_profile")).first()
+            if request.data.get("parameter_profile") else None)
+        data = ParameterFileSerializer(record).data
+        data["skipped_lines"] = skipped
+        data["already_stored"] = not created
+        return Response(data, status=http_status.HTTP_201_CREATED if created
+                        else http_status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"])
+    def parameters(self, request, pk=None):
+        record = self.get_object()
+        record = ParameterFile.objects.only("id", "name", "parameters").get(pk=record.pk)
+        return Response({"id": record.id, "name": record.name,
+                         "parameters": record.parameters})
+
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """The original bytes, after the scope check."""
+        record = self.get_object()
+        if not record.file:
+            raise WorkflowError("This file predates byte storage; only its text was "
+                                "kept.", code="no_original_bytes")
+        response = FileResponse(record.file.open("rb"), as_attachment=True,
+                                filename=record.name)
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated])
+    def compare(self, request):
+        """Diff two parameter sets. Each side may be a stored file
+        (``left``/``right`` id) or an upload (``left_file``/``right_file``)."""
+        s = ParameterCompareSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        tolerance = s.validated_data.get("tolerance") or 0.0
+        left, left_name, left_skipped = self._side(request, "left")
+        right, right_name, right_skipped = self._side(request, "right")
+        result = param_parser.compare(left, right, tolerance=tolerance)
+        result["left_name"] = left_name
+        result["right_name"] = right_name
+        result["skipped"] = {"left": left_skipped, "right": right_skipped}
+        return Response(result)
+
+    def _side(self, request, side):
+        upload = request.FILES.get(f"{side}_file")
+        if upload is not None:
+            parameters, skipped = evidence_svc.parse_upload(upload)
+            return parameters, upload.name, skipped
+        stored_id = request.data.get(side)
+        if not stored_id:
+            raise WorkflowError(f"Provide a file or a stored dump for the {side}-hand "
+                                "side.", code="side_required")
+        record = policy.scope_by_fc(request.user, ParameterFile.objects.all()).filter(
+            pk=stored_id).first()
+        if record is None:
+            raise WorkflowError(f"Parameter file {stored_id} was not found.",
+                                code="not_found")
+        return record.parameters, (record.label or record.name), record.parse_warnings
+
+
+class ConfigEvidenceViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Baselines, flashed records and read-backs. Created and associated
+    through services; never edited or deleted."""
+
+    serializer_class = ConfigEvidenceSerializer
+    permission_classes = [CanWriteProduction]
+    filterset_fields = ("fc", "kind", "file")
+
+    def get_scoped_queryset(self):
+        return policy.scope_by_fc(self.request.user, ConfigEvidence.objects.select_related(
+            "file", "fc"))
+
+    def create(self, request, *args, **kwargs):
+        s = ConfigEvidenceSerializer(data=request.data,
+                                     context=self.get_serializer_context())
+        s.is_valid(raise_exception=True)
+        d = dict(s.validated_data)
+        evidence = evidence_svc.record_evidence(
+            kind=d.pop("kind"), file=d.pop("file"), fc=d.pop("fc", None),
+            actor=request.user, **d)
+        return Response(ConfigEvidenceSerializer(
+            evidence, context=self.get_serializer_context()).data,
+            status=http_status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def associate(self, request, pk=None):
+        fc = get_object_or_404(policy.visible_fcs(request.user), pk=request.data.get("fc"))
+        new = evidence_svc.associate_unit(
+            self.get_object(), fc=fc, actor=request.user,
+            reason=request.data.get("reason", ""),
+            confidence=request.data.get("confidence") or ConfigEvidence.PROBABLE)
+        return Response(ConfigEvidenceSerializer(
+            new, context=self.get_serializer_context()).data,
+            status=http_status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="approve-baseline")
+    def approve_baseline(self, request, pk=None):
+        evidence_svc.approve_baseline(
+            self.get_object(), actor=request.user,
+            revision=request.data.get("revision", ""),
+            compatibility=request.data.get("compatibility", ""),
+            scope=request.data.get("scope", ""))
+        return Response(ConfigEvidenceSerializer(
+            self.get_object(), context=self.get_serializer_context()).data)
+
+
+class ParameterComparisonViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Recorded comparisons between two pieces of evidence: differences and
+    parser warnings, with no safety verdict."""
+
+    serializer_class = ParameterComparisonSerializer
+    permission_classes = [CanWriteProduction]
+
+    def get_scoped_queryset(self):
+        return policy.scope_by_fc(self.request.user, ParameterComparison.objects.all())
+
+    def create(self, request, *args, **kwargs):
+        s = ParameterComparisonSerializer(data=request.data,
+                                          context=self.get_serializer_context())
+        s.is_valid(raise_exception=True)
+        d = s.validated_data
+        comparison = evidence_svc.compare_evidence(
+            d["left_evidence"], d["right_evidence"], actor=request.user,
+            tolerance=d.get("tolerance") or 0.0)
+        return Response(ParameterComparisonSerializer(
+            comparison, context=self.get_serializer_context()).data,
+            status=http_status.HTTP_201_CREATED)

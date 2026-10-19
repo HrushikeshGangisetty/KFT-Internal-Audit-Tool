@@ -13,8 +13,9 @@ from fc.services import log_event
 from .models import (ISSUE_TRANSITIONS, Category, Handoff, Issue, IssueAttachment,
                      IssueEvent, IssueInvestigationNote, IssueKind,
                      IssueParticipant, IssueReassignmentLog, IssueStatus,
-                     IssueUnitLink, KnownIssue, ProductArea, Queue, RoutingRule,
-                     Severity, Urgency)
+                     IssueUnitLink, KnownIssue, ProductArea, Queue, Resolution,
+                     RoutingRule, Severity, Urgency, Verification)
+from . import deadlines
 from .search import reindex_issue, reindex_known_issue
 
 
@@ -155,11 +156,19 @@ def create_issue(*, fc, title, symptoms, actor, discovered_stage=None,
 
 
 @transaction.atomic
-def add_note(issue, *, author, note):
+def add_note(issue, *, author, note, note_type="general", supersedes=None):
+    """Append a typed note. A correction is a new note that supersedes the
+    old one; the original is kept."""
     if issue.status == IssueStatus.CLOSED:
         raise WorkflowError("Closed issues are read-only.", code="issue_closed")
+    if note_type not in IssueInvestigationNote.TYPES:
+        raise WorkflowError(f"Unknown note type '{note_type}'.", code="invalid_note_type")
+    if supersedes is not None and supersedes.issue_id != issue.pk:
+        raise WorkflowError("A note can only supersede a note on the same issue.",
+                            code="invalid_supersedes")
     entry = IssueInvestigationNote.objects.create(issue=issue, author=author,
-                                                  note=note)
+                                                  note=note, note_type=note_type,
+                                                  supersedes=supersedes)
     audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=author,
                  after={"investigation_note": note[:500]},
                  note="Investigation note added", fc=issue.fc)
@@ -217,9 +226,18 @@ def _require_transition(issue, new_status):
 
 @transaction.atomic
 def change_status(issue, new_status, *, actor, note="", root_cause=None,
-                  resolution=None, root_cause_department=None):
+                  resolution=None, root_cause_department=None,
+                  root_cause_status=None, resolution_details=None,
+                  verification_details=None):
+    """Move an issue along the allow-list. Resolving writes a Resolution row
+    (a confirmed root cause is not required, WP7); verifying writes a
+    Verification row against the latest resolution and is refused for the
+    resolver. A failed verification goes through ``verify``."""
     _require_transition(issue, new_status)
     before = audit.snapshot(issue)
+    if new_status == IssueStatus.VERIFIED:
+        return verify(issue, verifier=actor, passed=True, note=note,
+                      **(verification_details or {}))
 
     if new_status == IssueStatus.RESOLVED:
         if root_cause is not None:
@@ -228,25 +246,28 @@ def change_status(issue, new_status, *, actor, note="", root_cause=None,
             issue.resolution = resolution
         if root_cause_department is not None:
             issue.root_cause_department = root_cause_department
-        if not issue.root_cause.strip() or not issue.resolution.strip():
-            raise WorkflowError("Root cause and resolution are required to resolve "
+        if not issue.resolution.strip():
+            raise WorkflowError("A change summary (resolution) is required to resolve "
                                 "an issue.", code="root_cause_required")
+        if root_cause_status is None:
+            root_cause_status = (Resolution.CONFIRMED if issue.root_cause.strip()
+                                 else Resolution.UNKNOWN)
+        if root_cause_status not in dict(Resolution.ROOT_CAUSE_CHOICES):
+            raise WorkflowError("Unknown root cause status.", code="invalid_root_cause")
+        if root_cause_status == Resolution.CONFIRMED and not issue.root_cause.strip():
+            raise WorkflowError("A confirmed root cause needs a description.",
+                                code="root_cause_required")
         if issue.assigned_person_id is None and issue.assigned_department_id is None:
             raise WorkflowError("An issue must be assigned before it can be resolved.",
                                 code="assignment_required")
         issue.resolved_at = timezone.now()
         issue.resolved_by = actor
-    elif new_status == IssueStatus.VERIFIED:
-        if settings.REQUIRE_INDEPENDENT_VERIFICATION and \
-                issue.resolved_by_id and actor and issue.resolved_by_id == actor.pk:
-            raise WorkflowError(
-                "Verification must be performed by someone other than the person "
-                "who resolved the issue.", code="independent_verification_required")
-        if not (actor.is_test_engineer or actor.is_lead_role):
-            raise WorkflowError("Only a test engineer, department lead or manager "
-                                "may verify a resolution.", code="forbidden")
-        issue.verified_at = timezone.now()
-        issue.verified_by = actor
+        res = Resolution.objects.create(
+            issue=issue, resolved_by=actor, at=issue.resolved_at,
+            change_summary=issue.resolution, root_cause_status=root_cause_status,
+            **(resolution_details or {}))
+        record_event(issue, "resolved", actor, resolution=res.pk,
+                     root_cause_status=root_cause_status)
     elif new_status == IssueStatus.CLOSED:
         issue.closed_at = timezone.now()
         issue.closed_by = actor
@@ -271,11 +292,17 @@ def change_status(issue, new_status, *, actor, note="", root_cause=None,
 
 @transaction.atomic
 def reopen(issue, *, actor, reason):
-    if not actor.is_manager_role:
-        raise WorkflowError("Only a manager or admin may reopen a closed issue.",
+    """Back to investigating; earlier resolutions and verifications stay.
+    Authority is ``settings.REOPEN_ALLOWED`` (placeholder)."""
+    if not can_reopen(issue, actor):
+        raise WorkflowError("You are not allowed to reopen this issue.",
                             code="forbidden")
     if not reason:
         raise WorkflowError("Reopening requires a reason.", code="reason_required")
+    if issue.status not in (IssueStatus.RESOLVED, IssueStatus.VERIFIED,
+                            IssueStatus.CLOSED):
+        raise WorkflowError("Only a resolved, verified or closed issue can be "
+                            "reopened.", code="invalid_issue_transition")
     before = audit.snapshot(issue)
     issue.status = IssueStatus.INVESTIGATING
     issue.closed_at = None
@@ -287,20 +314,40 @@ def reopen(issue, *, actor, reason):
                         note=f"REOPENED: {reason}", actor=actor)
     log_event(issue.fc, "ISSUE_REOPENED", f"{issue.key} reopened", detail=reason,
               stage=issue.discovered_stage, actor=actor, issue=issue)
+    record_event(issue, "reopened", actor, reason=reason)
     _recompute_fc(issue)
     return issue
 
 
 @transaction.atomic
-def set_waiting(issue, *, actor, waiting, reason=""):
+def set_waiting(issue, *, actor, waiting, reason="", dependency_owner="",
+                next_followup_at=None):
+    """Waiting needs a reason and a follow-up date within WAITING_MAX_DAYS.
+    It pauses ordinary follow-ups, never acknowledgement escalation."""
+    from datetime import timedelta
+    if waiting:
+        now = timezone.now()
+        if not (reason or "").strip() or next_followup_at is None:
+            raise WorkflowError("Waiting needs a reason and a follow-up date.",
+                                code="waiting_incomplete")
+        if not now < next_followup_at <= now + timedelta(days=settings.WAITING_MAX_DAYS):
+            raise WorkflowError(f"The follow-up date must be within "
+                                f"{settings.WAITING_MAX_DAYS} days.",
+                                code="followup_out_of_range")
     before = audit.snapshot(issue)
     issue.is_waiting = waiting
     issue.waiting_reason = reason if waiting else ""
-    issue.save(update_fields=["is_waiting", "waiting_reason", "updated_at"])
+    issue.waiting_dependency_owner = dependency_owner if waiting else ""
+    issue.waiting_next_followup_at = next_followup_at if waiting else None
+    issue.save(update_fields=["is_waiting", "waiting_reason",
+                              "waiting_dependency_owner", "waiting_next_followup_at",
+                              "updated_at"])
     audit.record_change(issue, AuditLogEntry.ACTION_UPDATE, before,
                         note="Waiting flag changed", actor=actor)
     record_event(issue, "waiting_set" if waiting else "waiting_cleared", actor,
-                 reason=issue.waiting_reason)
+                 reason=issue.waiting_reason,
+                 dependency_owner=issue.waiting_dependency_owner,
+                 next_followup_at=next_followup_at.isoformat() if waiting else None)
     return issue
 
 
@@ -308,7 +355,7 @@ def set_waiting(issue, *, actor, waiting, reason=""):
 def promote_to_known_issue(issue, *, actor, title=None, symptoms_summary=None,
                            root_cause=None, resolution=None,
                            affected_revisions=None, affected_firmware=None,
-                           affected_software=None):
+                           affected_software=None, audience=None):
     if not (actor.is_lead_role or actor.is_manager_role):
         raise WorkflowError("Only a department lead, manager or admin may promote "
                             "an issue to a Known Issue.", code="forbidden")
@@ -328,6 +375,7 @@ def promote_to_known_issue(issue, *, actor, title=None, symptoms_summary=None,
             filter(None, [issue.gcs_version, issue.configurator_version])),
         owning_department=issue.root_cause_department or issue.assigned_department,
         promoted_by=actor,
+        audience=audience or KnownIssue.AUDIENCE_HEADS,
     )
     link_issue_to_known(issue, known, actor=actor, reason="Promoted from this issue")
     reindex_known_issue(known)
@@ -392,7 +440,13 @@ IMMUTABLE_FIELDS = ("fc", "discovered_stage", "discovered_stage_record",
                     "discovering_department", "discovered_by", "reporter",
                     "submitted_at")
 SERVICE_OWNED_FIELDS = ("queue", "accountable_user", "acknowledged_at",
-                        "acknowledged_by", "blocks_stage", "kind", "parent")
+                        "acknowledged_by", "blocks_stage", "kind", "parent",
+                        "owner_epoch", "owner_since", "is_waiting", "waiting_reason",
+                        "waiting_dependency_owner", "waiting_next_followup_at",
+                        # status and its sign-offs move only through
+                        # change_status / verify / reopen (WP7)
+                        "status", "resolved_at", "resolved_by", "verified_at",
+                        "verified_by", "closed_at", "closed_by")
 
 
 @transaction.atomic
@@ -415,7 +469,7 @@ def edit_issue(issue, *, actor, changes):
 
 def record_event(issue, type, actor=None, **data):
     return IssueEvent.objects.create(issue=issue, type=type, actor=actor,
-                                     data=data)
+                                     at=timezone.now(), data=data)
 
 
 @transaction.atomic
@@ -470,6 +524,8 @@ def link_unit(issue, *, fc, actor, reason):
     link = IssueUnitLink.objects.create(issue=issue, fc=fc, linked_by=actor,
                                         reason=reason)
     record_event(issue, "unit_linked", actor, fc=fc.pk, reason=reason)
+    log_event(fc, "ISSUE_LINKED", f"{issue.key} linked to this unit", detail=reason,
+              actor=actor, issue=issue)
     audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=actor,
                  after={"unit_linked": fc.serial}, note=reason, fc=fc)
     return link
@@ -510,22 +566,6 @@ def _managers():
         capability_grants__revoked_at__isnull=True))
 
 
-def _alert(issue, step, recipients, urgency=None):
-    urgency = urgency or (alerts.URGENT if issue.urgency == Urgency.URGENT else "normal")
-    head = issue.queue.head if issue.queue_id else None
-    created = alerts.dispatch_alert(
-        f"issue:{issue.pk}:{step}", recipients, urgency, ("issue", issue.pk),
-        kind="ISSUE_ALERT",
-        summary={"ref": issue.key, "urgency": urgency,
-                 "queue": issue.queue.name if issue.queue_id else "",
-                 "link": f"/issues/{issue.pk}"},
-        on_failure=[head, *_managers()])
-    if created:
-        record_event(issue, "notified", None, step=step,
-                     recipients=sorted({d.recipient_id for d in created}),
-                     channels=sorted({d.channel for d in created}))
-
-
 def pick_queue(product_area):
     rule = (RoutingRule.objects.filter(product_area=product_area)
             .select_related("queue").order_by("priority", "id").first())
@@ -541,18 +581,19 @@ def route(issue, actor=None):
     queue = pick_queue(issue.product_area)
     if queue is None:
         return issue
+    now = timezone.now()
     issue.queue = queue
     issue.accountable_user = queue.head
+    issue.owner_since = now
     if queue.department_id:
         issue.assigned_department_id = queue.department_id
     issue.save(update_fields=["queue", "accountable_user", "assigned_department",
-                              "updated_at"])
-    now = timezone.now()
+                              "owner_since", "updated_at"])
     record_event(issue, "routed", actor, queue=queue.pk, queue_name=queue.name,
                  fallback=queue.is_fallback,
                  seconds_since_submission=(now - issue.submitted_at).total_seconds())
     record_event(issue, "assigned", actor, accountable=queue.head_id, queue=queue.pk)
-    _alert(issue, f"routed:{queue.pk}", [queue.head])
+    deadlines.check_issue(issue, now)  # step 0: the head is alerted now
     return issue
 
 
@@ -594,11 +635,16 @@ def accept_ownership(issue, *, actor, member):
                             code="not_team_member")
     before = audit.snapshot(issue)
     issue.accountable_user = member
-    issue.save(update_fields=["accountable_user", "updated_at"])
-    record_event(issue, "ownership_accepted", actor, accountable=member.pk)
+    issue.owner_epoch += 1
+    issue.owner_since = timezone.now()
+    issue.save(update_fields=["accountable_user", "owner_epoch", "owner_since",
+                              "updated_at"])
+    record_event(issue, "ownership_accepted", actor, accountable=member.pk,
+                 owner_epoch=issue.owner_epoch)
     audit.record_change(issue, AuditLogEntry.ACTION_REASSIGN, before,
                         note="Ownership accepted", actor=actor)
     notify(member, "ISSUE_ASSIGNED", issue)
+    deadlines.check_issue(issue)
     return issue
 
 
@@ -622,7 +668,8 @@ def propose_handoff(issue, *, actor, to_department, reason, to_user=None):
             handoff = Handoff.objects.create(
                 issue=issue, from_user=issue.accountable_user,
                 from_department=issue.assigned_department, to_department=to_department,
-                to_user=to_user, reason=reason, proposed_by=actor)
+                to_user=to_user, reason=reason, proposed_by=actor,
+                proposed_at=timezone.now())
     except IntegrityError:
         raise WorkflowError("A handoff is already pending for this issue.",
                             code="handoff_pending")
@@ -631,9 +678,7 @@ def propose_handoff(issue, *, actor, to_department, reason, to_user=None):
                  to_user=getattr(to_user, "pk", None), reason=reason)
     audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=actor,
                  after={"handoff_to": to_department.pk}, note=reason)
-    queue = handoff.to_queue
-    _alert(issue, f"handoff:{handoff.pk}", [to_user] if to_user else
-           [getattr(queue, "head", None)])
+    deadlines.check_handoff(handoff)  # step 0: the receiver is alerted now
     return handoff
 
 
@@ -671,10 +716,14 @@ def respond_handoff(handoff, *, actor, accept, reason=""):
     issue.queue = queue or issue.queue
     issue.assigned_department = handoff.to_department
     issue.accountable_user = new_owner
-    # The acknowledgement clock restarts for the new owner.
+    # The acknowledgement clock and escalation sequence restart for the
+    # new owner.
     issue.acknowledged_at, issue.acknowledged_by = None, None
+    issue.owner_epoch += 1
+    issue.owner_since = timezone.now()
     issue.save(update_fields=["queue", "assigned_department", "accountable_user",
-                              "acknowledged_at", "acknowledged_by", "updated_at"])
+                              "acknowledged_at", "acknowledged_by", "owner_epoch",
+                              "owner_since", "updated_at"])
     IssueReassignmentLog.objects.create(
         issue=issue, from_department=from_department,
         to_department=handoff.to_department, from_person=from_person,
@@ -685,5 +734,78 @@ def respond_handoff(handoff, *, actor, accept, reason=""):
                  queue=issue.queue_id)
     audit.record_change(issue, AuditLogEntry.ACTION_REASSIGN, before,
                         note=f"Handoff {handoff.pk} accepted", actor=actor)
-    _alert(issue, f"handoff:{handoff.pk}:accepted", [new_owner])
+    deadlines.check_issue(issue)
     return handoff
+
+
+def _can_verify(issue, user):
+    from access.policy import is_head_or_manager
+    if user.is_test_engineer or user.is_lead_role or is_head_or_manager(user):
+        return True
+    return issue.participants.filter(user=user, role=IssueParticipant.ROLE_VERIFIER,
+                                     removed_at__isnull=True).exists()
+
+
+@transaction.atomic
+def verify(issue, *, verifier, passed, what_tested="", evidence="", note=""):
+    """Independent verification of the latest resolution (scenario 7). A
+    fail returns the issue to investigation and keeps the resolution."""
+    # Lock the row but keep working on the caller's instance, so it is not
+    # left stale.
+    Issue.objects.select_for_update().get(pk=issue.pk)
+    issue.refresh_from_db()
+    if issue.status != IssueStatus.RESOLVED:
+        raise WorkflowError("Only a resolved issue can be verified.",
+                            code="invalid_issue_transition")
+    resolution = issue.resolutions.order_by("-at", "-id").first()
+    if resolution is None:
+        raise WorkflowError("No resolution is recorded for this issue.",
+                            code="no_resolution")
+    if settings.REQUIRE_INDEPENDENT_VERIFICATION and \
+            resolution.resolved_by_id == verifier.pk:
+        raise WorkflowError(
+            "Verification must be performed by someone other than the person "
+            "who resolved the issue.", code="independent_verification_required")
+    if not _can_verify(issue, verifier):
+        raise WorkflowError("Only a test engineer, a head, a manager or the assigned "
+                            "verifier may verify a resolution.", code="forbidden")
+    before = audit.snapshot(issue)
+    v = Verification.objects.create(
+        resolution=resolution, verifier=verifier,
+        what_tested=what_tested or note or "(not stated)", evidence=evidence,
+        result=Verification.PASS if passed else Verification.FAIL, notes=note)
+    if passed:
+        issue.status = IssueStatus.VERIFIED
+        issue.verified_at, issue.verified_by = v.at, verifier
+        record_event(issue, "verified", verifier, verification=v.pk)
+    else:
+        issue.status = IssueStatus.INVESTIGATING
+        record_event(issue, "verification_failed", verifier, verification=v.pk)
+    issue.save()
+    reindex_issue(issue)
+    audit.record_change(issue, AuditLogEntry.ACTION_VERIFY, before,
+                        note=note or v.what_tested, actor=verifier)
+    log_event(issue.fc, f"ISSUE_{issue.status}",
+              f"{issue.key} → {issue.get_status_display()}", detail=note,
+              stage=issue.discovered_stage, actor=verifier, issue=issue)
+    for watcher in {issue.discovered_by, issue.assigned_person, issue.resolved_by}:
+        if watcher and watcher.pk != verifier.pk:
+            notify(watcher, "ISSUE_STATUS", issue)
+    if issue.known_issue_id:
+        issue.known_issue.refresh_rollup()
+    _recompute_fc(issue)
+    return issue
+
+
+def can_reopen(issue, user):
+    from access.policy import has_capability, is_head_or_manager
+    from accounts.models import Capability
+    allowed = set(settings.REOPEN_ALLOWED)
+    return any((
+        "accountable" in allowed and issue.accountable_user_id == user.pk,
+        "queue_head" in allowed and issue.queue_id is not None
+        and user.pk in (issue.queue.head_id, issue.queue.backup_id),
+        "any_head" in allowed and is_head_or_manager(user),
+        "manager" in allowed and (has_capability(user, Capability.IS_MANAGER)
+                                  or user.is_manager_role),
+    ))

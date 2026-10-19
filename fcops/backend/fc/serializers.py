@@ -323,3 +323,82 @@ class FlashBuildSerializer(serializers.Serializer):
     config_result = serializers.ChoiceField(
         choices=FirmwareRecord.RESULT_CHOICES, default=FirmwareRecord.RESULT_SUCCESS)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+# --- WP8: parameter files and configuration evidence --------------------------
+from .models import (BaselineApproval, ConfigEvidence, FlightController,  # noqa: E402
+                     ParameterComparison, ParameterFile)
+
+
+class ParameterFileSerializer(serializers.ModelSerializer):
+    """Listing shape: never the parameter set or raw text (slow links)."""
+    uploaded_by_name = serializers.CharField(source="uploaded_by.full_name",
+                                             read_only=True, default="")
+    fc_serial = serializers.CharField(source="fc.serial", read_only=True, default="")
+    download_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ParameterFile
+        fields = ("id", "name", "label", "fc", "fc_serial", "firmware_record",
+                  "parameter_profile", "parameter_count", "uploaded_by",
+                  "uploaded_by_name", "created_at", "sha256", "size",
+                  "parser_version", "parse_warnings", "download_url")
+        read_only_fields = fields
+
+    def get_download_url(self, obj):
+        return f"/api/parameter-files/{obj.pk}/download/" if obj.file else ""
+
+
+class ParameterCompareSerializer(serializers.Serializer):
+    """Compare two stored dumps, two uploads, or one of each."""
+    left = serializers.IntegerField(required=False, allow_null=True)
+    right = serializers.IntegerField(required=False, allow_null=True)
+    tolerance = serializers.FloatField(required=False, default=0.0)
+
+    def validate_tolerance(self, value):
+        if value < 0 or value > 1:
+            raise serializers.ValidationError(
+                "Tolerance is a relative fraction between 0 and 1.")
+        return value
+
+
+class BaselineApprovalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BaselineApproval
+        fields = ("revision", "approved_by", "approved_at", "compatibility", "scope")
+
+
+class ConfigEvidenceSerializer(serializers.ModelSerializer):
+    file = ScopedPrimaryKeyRelatedField(
+        lambda user: policy.scope_by_fc(user, ParameterFile.objects.all()))
+    fc = ScopedPrimaryKeyRelatedField(policy.visible_fcs, required=False,
+                                      allow_null=True)
+    fc_serial = serializers.CharField(source="fc.serial", read_only=True, default="")
+    file_name = serializers.CharField(source="file.name", read_only=True)
+    approval = BaselineApprovalSerializer(read_only=True)
+    superseded_by = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = ConfigEvidence
+        fields = ("id", "kind", "file", "file_name", "fc", "fc_serial",
+                  "unit_identity_confidence", "firmware_version", "firmware_build",
+                  "gcs_version", "hardware_revision", "captured_at", "recorded_by",
+                  "recorded_at", "tool", "source_note", "supersedes",
+                  "superseded_by", "approval")
+        read_only_fields = ("recorded_by", "recorded_at", "supersedes")
+        extra_kwargs = {"captured_at": {"required": False}}
+
+
+class ParameterComparisonSerializer(serializers.ModelSerializer):
+    left_evidence = ScopedPrimaryKeyRelatedField(
+        lambda user: policy.scope_by_fc(user, ConfigEvidence.objects.all()))
+    right_evidence = ScopedPrimaryKeyRelatedField(
+        lambda user: policy.scope_by_fc(user, ConfigEvidence.objects.all()))
+    tolerance = serializers.FloatField(write_only=True, required=False, default=0.0,
+                                       min_value=0, max_value=1)
+
+    class Meta:
+        model = ParameterComparison
+        fields = ("id", "left_evidence", "right_evidence", "tolerance", "result",
+                  "parser_versions", "created_by", "created_at")
+        read_only_fields = ("result", "parser_versions", "created_by", "created_at")

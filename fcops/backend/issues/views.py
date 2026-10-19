@@ -29,7 +29,8 @@ from .serializers import (HandoffProposeSerializer, HandoffRespondSerializer,
                           IssueDetailSerializer, IssueListSerializer,
                           KnownIssueSerializer, ParticipantAddSerializer,
                           ReassignSerializer, ReportSerializer,
-                          SimilarQuerySerializer, StatusChangeSerializer)
+                          SimilarQuerySerializer, StatusChangeSerializer,
+                          VerifySerializer, WaitingSerializer)
 
 
 class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
@@ -195,6 +196,19 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
             issue, context=self.get_serializer_context()).data,
             status=http_status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"])
+    def evidence(self, request, pk=None):
+        from fc.evidence import link_evidence
+        from fc.models import ConfigEvidence
+        issue = self.get_object()
+        evidence = get_object_or_404(
+            policy.scope_by_fc(request.user, ConfigEvidence.objects.all()),
+            pk=request.data.get("evidence"))
+        link_evidence(issue, evidence, actor=request.user)
+        return Response(IssueDetailSerializer(
+            issue, context=self.get_serializer_context()).data,
+            status=http_status.HTTP_201_CREATED)
+
     @action(detail=True, methods=["post"], url_path="blocks-stage")
     def blocks_stage(self, request, pk=None):
         issue = services.set_blocks_stage(
@@ -210,7 +224,12 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
         note = (request.data.get("note") or "").strip()
         if not note:
             raise WorkflowError("Note text is required.", code="note_required")
-        entry = services.add_note(issue, author=request.user, note=note)
+        supersedes = (get_object_or_404(issue.investigation_notes,
+                                        pk=request.data["supersedes"])
+                      if request.data.get("supersedes") else None)
+        entry = services.add_note(issue, author=request.user, note=note,
+                                  note_type=request.data.get("note_type") or "general",
+                                  supersedes=supersedes)
         return Response(InvestigationNoteSerializer(entry).data,
                         status=http_status.HTTP_201_CREATED)
 
@@ -234,15 +253,34 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
         s = StatusChangeSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         d = s.validated_data
+        details = {k: d[k] for k in ("workaround", "affected_versions",
+                                     "affected_units", "unresolved_risks",
+                                     "evidence_links") if k in d}
         issue = services.change_status(
             issue, d["status"], actor=request.user, note=d.get("note", ""),
             root_cause=d.get("root_cause"), resolution=d.get("resolution"),
             root_cause_department=Department.objects.filter(
                 pk=d.get("root_cause_department")).first()
-            if d.get("root_cause_department") else None)
+            if d.get("root_cause_department") else None,
+            root_cause_status=d.get("root_cause_status"),
+            resolution_details=details,
+            verification_details={k: d[k] for k in ("what_tested", "evidence")
+                                  if k in d})
         return Response(self.get_serializer(issue).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsManager])
+    @action(detail=True, methods=["post"])
+    def verify(self, request, pk=None):
+        """Record a pass or fail; a fail returns the issue to investigating."""
+        s = VerifySerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        d = s.validated_data
+        issue = services.verify(self.get_object(), verifier=request.user,
+                                passed=d["result"] == "pass",
+                                what_tested=d["what_tested"], evidence=d["evidence"],
+                                note=d["notes"])
+        return Response(self.get_serializer(issue).data)
+
+    @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
         issue = self.get_object()
         issue = services.reopen(issue, actor=request.user,
@@ -251,10 +289,13 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def waiting(self, request, pk=None):
-        issue = self.get_object()
-        issue = services.set_waiting(issue, actor=request.user,
-                                     waiting=bool(request.data.get("waiting")),
-                                     reason=request.data.get("reason", ""))
+        s = WaitingSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        d = s.validated_data
+        issue = services.set_waiting(self.get_object(), actor=request.user,
+                                     waiting=d["waiting"], reason=d["reason"],
+                                     dependency_owner=d["dependency_owner"],
+                                     next_followup_at=d.get("next_followup_at"))
         return Response(self.get_serializer(issue).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsLeadOrAbove])
@@ -268,7 +309,8 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
             resolution=request.data.get("resolution"),
             affected_revisions=request.data.get("affected_revisions"),
             affected_firmware=request.data.get("affected_firmware"),
-            affected_software=request.data.get("affected_software"))
+            affected_software=request.data.get("affected_software"),
+            audience=request.data.get("audience"))
         return Response(KnownIssueSerializer(
             known, context=self.get_serializer_context()).data,
             status=http_status.HTTP_201_CREATED)

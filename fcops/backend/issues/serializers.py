@@ -7,7 +7,7 @@ from fc.lifecycle import Stage
 from .models import (Category, Handoff, Impact, Issue, IssueAttachment, IssueEvent,
                      IssueInvestigationNote, IssueKind, IssueParticipant,
                      IssueReassignmentLog, IssueStatus, IssueUnitLink, KnownIssue,
-                     ProductArea, Severity, Urgency)
+                     ProductArea, Resolution, Severity, Urgency, Verification)
 
 
 def _scoped_issues(serializer):
@@ -27,7 +27,7 @@ class InvestigationNoteSerializer(serializers.ModelSerializer):
     class Meta:
         model = IssueInvestigationNote
         fields = ("id", "issue", "author", "author_name", "author_department",
-                  "note", "created_at")
+                  "note", "note_type", "supersedes", "created_at")
         read_only_fields = ("issue", "author")
 
 
@@ -185,6 +185,29 @@ class UnitLinkSerializer(serializers.ModelSerializer):
         fields = ("id", "fc", "fc_serial", "linked_by", "linked_at", "reason")
 
 
+class VerificationSerializer(serializers.ModelSerializer):
+    verifier_name = serializers.CharField(source="verifier.full_name", read_only=True,
+                                          default="")
+
+    class Meta:
+        model = Verification
+        fields = ("id", "verifier", "verifier_name", "at", "what_tested", "evidence",
+                  "result", "notes")
+
+
+class ResolutionSerializer(serializers.ModelSerializer):
+    resolved_by_name = serializers.CharField(source="resolved_by.full_name",
+                                             read_only=True, default="")
+    verifications = VerificationSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Resolution
+        fields = ("id", "resolved_by", "resolved_by_name", "at", "change_summary",
+                  "root_cause_status", "workaround", "evidence_links",
+                  "affected_versions", "affected_units", "unresolved_risks",
+                  "verifications")
+
+
 class IssueDetailSerializer(IssueListSerializer):
     investigation_notes = InvestigationNoteSerializer(many=True, read_only=True)
     reassignments = ReassignmentLogSerializer(many=True, read_only=True)
@@ -206,6 +229,9 @@ class IssueDetailSerializer(IssueListSerializer):
     events = IssueEventSerializer(many=True, read_only=True)
     handoffs = HandoffSerializer(many=True, read_only=True)
     unit_links = UnitLinkSerializer(many=True, read_only=True)
+    resolutions = ResolutionSerializer(many=True, read_only=True)
+    ack_due_at = serializers.SerializerMethodField()
+    versions_at_time = serializers.SerializerMethodField()
 
     class Meta(IssueListSerializer.Meta):
         fields = IssueListSerializer.Meta.fields + (
@@ -218,13 +244,26 @@ class IssueDetailSerializer(IssueListSerializer):
             "known_issue_detail", "participants", "allowed_transitions",
             "reporter", "reporter_name", "occurred_at_approx", "location_context",
             "reproduction_notes", "acknowledged_by", "parent_summary", "events",
-            "handoffs", "unit_links")
+            "handoffs", "unit_links", "resolutions", "ack_due_at",
+            "waiting_dependency_owner", "waiting_next_followup_at", "owner_epoch",
+            "versions_at_time")
         # Discovery facts and routing state change only through services.
         read_only_fields = ("fc", "discovered_stage", "discovered_stage_record",
                             "discovering_department", "discovered_by", "reporter",
                             "submitted_at", "queue", "accountable_user",
                             "acknowledged_at", "acknowledged_by", "blocks_stage",
-                            "kind", "parent")
+                            "kind", "parent", "owner_epoch", "owner_since",
+                            "is_waiting", "waiting_reason", "waiting_dependency_owner",
+                            "waiting_next_followup_at", "status", "resolved_by",
+                            "verified_by", "verified_at", "closed_at")
+
+    def get_ack_due_at(self, obj):
+        from .deadlines import ack_due_at
+        return None if obj.acknowledged_at else ack_due_at(obj)
+
+    def get_versions_at_time(self, obj):
+        from fc.evidence import versions_at_time
+        return versions_at_time(obj, self.context["request"].user)
 
     def get_parent_summary(self, obj):
         """Seeing a workstream shows its incident's headline, never the
@@ -308,6 +347,31 @@ class StatusChangeSerializer(serializers.Serializer):
     root_cause = serializers.CharField(required=False, allow_blank=True)
     resolution = serializers.CharField(required=False, allow_blank=True)
     root_cause_department = serializers.IntegerField(required=False, allow_null=True)
+    root_cause_status = serializers.ChoiceField(
+        choices=Resolution.ROOT_CAUSE_CHOICES, required=False)
+    workaround = serializers.CharField(required=False, allow_blank=True)
+    affected_versions = serializers.CharField(required=False, allow_blank=True)
+    affected_units = serializers.CharField(required=False, allow_blank=True)
+    unresolved_risks = serializers.CharField(required=False, allow_blank=True)
+    evidence_links = serializers.ListField(child=serializers.CharField(),
+                                           required=False)
+    what_tested = serializers.CharField(required=False, allow_blank=True)
+    evidence = serializers.CharField(required=False, allow_blank=True)
+
+
+class VerifySerializer(serializers.Serializer):
+    result = serializers.ChoiceField(choices=[("pass", "pass"), ("fail", "fail")])
+    what_tested = serializers.CharField()
+    evidence = serializers.CharField(required=False, allow_blank=True, default="")
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class WaitingSerializer(serializers.Serializer):
+    waiting = serializers.BooleanField()
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+    dependency_owner = serializers.CharField(required=False, allow_blank=True,
+                                             default="")
+    next_followup_at = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class ParticipantAddSerializer(serializers.Serializer):

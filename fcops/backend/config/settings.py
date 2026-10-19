@@ -210,6 +210,15 @@ ATTACHMENT_MAX_BYTES = int(env("ATTACHMENT_MAX_BYTES", str(10 * 1024 * 1024)))
 # after an accepted handoff ("read") or loses it ("none").
 HANDOFF_PREVIOUS_TEAM_ACCESS = env("HANDOFF_PREVIOUS_TEAM_ACCESS", "read")
 
+# --- Deadlines, waiting and reopening (WP6, WP7) ---------------------------
+# PLACEHOLDER: no after-hours duty contact until the PRD decision; urgent
+# alerts after hours go to the owner and the gap is shown to managers.
+DUTY_CONTACT_USER_ID = int(env("DUTY_CONTACT_USER_ID", "0")) or None
+WAITING_MAX_DAYS = int(env("WAITING_MAX_DAYS", "14"))
+# PLACEHOLDER: who may reopen a resolved, verified or closed issue.
+REOPEN_ALLOWED = [r for r in env(
+    "REOPEN_ALLOWED", "accountable,queue_head,any_head,manager").split(",") if r]
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

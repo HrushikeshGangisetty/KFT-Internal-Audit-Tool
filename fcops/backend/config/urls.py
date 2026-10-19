@@ -13,7 +13,8 @@ from fc.views import (ChecklistItemViewSet, ChecklistTemplateViewSet,
                       LifecycleMetaView, ParameterProfileViewSet,
                       ReworkRecordViewSet, SoftwareUpdateViewSet,
                       SoftwareVersionViewSet, StageRecordViewSet,
-                      TestResultViewSet)
+                      TestResultViewSet, ParameterFileViewSet,
+                      ConfigEvidenceViewSet, ParameterComparisonViewSet)
 from issues.views import (HandoffViewSet, IssueAttachmentViewSet, IssueViewSet,
                           KnownIssueViewSet, MyQueueView)
 
@@ -32,6 +33,10 @@ router.register("stage-records", StageRecordViewSet, basename="stagerecord")
 router.register("rework-records", ReworkRecordViewSet, basename="reworkrecord")
 router.register("firmware-records", FirmwareRecordViewSet, basename="firmwarerecord")
 router.register("test-results", TestResultViewSet, basename="testresult")
+router.register("parameter-files", ParameterFileViewSet, basename="parameterfile")
+router.register("config-evidence", ConfigEvidenceViewSet, basename="configevidence")
+router.register("parameter-comparisons", ParameterComparisonViewSet,
+                basename="parametercomparison")
 router.register("issues", IssueViewSet, basename="issue")
 router.register("known-issues", KnownIssueViewSet, basename="knownissue")
 router.register("issue-attachments", IssueAttachmentViewSet, basename="issueattachment")

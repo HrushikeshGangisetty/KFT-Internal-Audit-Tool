@@ -69,3 +69,10 @@ def working_minutes_between(a, b, holidays=None):
                 total += end - begin
         day += timedelta(days=1)
     return int(total.total_seconds() // 60)
+
+
+def is_working_time(at, holidays=None):
+    tz, workdays, opens, closes = _config()
+    local = at.astimezone(tz)
+    window = _window(local.date(), tz, workdays, opens, closes, _holidays(holidays))
+    return bool(window and window[0] <= local < window[1])

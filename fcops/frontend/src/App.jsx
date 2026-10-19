@@ -18,6 +18,7 @@ import PushUpdate from './pages/PushUpdate.jsx'
 import ManageFirmware from './pages/ManageFirmware.jsx'
 import TestConfiguration from './pages/TestConfiguration.jsx'
 import FcModels from './pages/FcModels.jsx'
+import ParamCompare from './pages/ParamCompare.jsx'
 import AuditLog from './pages/AuditLog.jsx'
 
 function Shell({ children }) {
@@ -53,6 +54,7 @@ function Shell({ children }) {
           <NavLink to="/search">Knowledge Search</NavLink>
           <NavLink to="/known-issues">Known Issues</NavLink>
           <NavLink to="/audit">Audit Log</NavLink>
+          <NavLink to="/param-compare">Parameter Compare</NavLink>
 
           {user?.permissions?.can_push_software_update ? (
             <>
@@ -168,6 +170,7 @@ export default function App() {
         <Route path="/known-issues" element={<KnownIssues />} />
         <Route path="/search" element={<Search />} />
         <Route path="/audit" element={<AuditLog />} />
+        <Route path="/param-compare" element={<ParamCompare />} />
         <Route path="/software/push-update" element={<PushUpdate />} />
         <Route path="/firmware/builds" element={<ManageFirmware />} />
         <Route path="/manager/test-configuration" element={<TestConfiguration />} />

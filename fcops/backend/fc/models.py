@@ -558,6 +558,145 @@ class TestResult(TimeStampedModel):
         return self.overall_passed
 
 
+class ParameterFile(TimeStampedModel):
+    """An uploaded ArduPilot-style ``.param`` file.
+
+    Parameters are stored parsed, as ``{name: value}``, so two files can be
+    compared without re-reading the originals — and so a file attached to an FC
+    stays readable long after the upload. The raw text is kept too, because a
+    parameter dump is evidence and evidence should not be lossy.
+
+    WP8: the original bytes are also kept in private storage, identified by
+    their SHA-256 so the same file is stored once. ``label``, ``fc``,
+    ``firmware_record`` and ``parameter_profile`` are the pre-WP8 upload
+    context; new context belongs on ``ConfigEvidence``.
+    """
+
+    name = models.CharField(max_length=160, help_text="Original file name")
+    label = models.CharField(max_length=160, blank=True,
+                             help_text="What this dump represents, e.g. "
+                                       "'FC-2026-00012 after bench test'")
+    fc = models.ForeignKey(FlightController, null=True, blank=True,
+                           on_delete=models.CASCADE,
+                           related_name="parameter_files")
+    firmware_record = models.ForeignKey(FirmwareRecord, null=True, blank=True,
+                                        on_delete=models.SET_NULL,
+                                        related_name="parameter_files")
+    parameter_profile = models.ForeignKey(ParameterProfile, null=True, blank=True,
+                                          on_delete=models.SET_NULL,
+                                          related_name="parameter_files")
+    parameters = models.JSONField(default=dict, help_text='{"ANGLE_MAX": 3000}')
+    raw_text = models.TextField(blank=True)
+    parameter_count = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                    on_delete=models.SET_NULL,
+                                    related_name="parameter_files")
+    # --- WP8 ---
+    sha256 = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    size = models.PositiveIntegerField(default=0)
+    file = models.FileField(upload_to="parameter-files/%Y/%m/", blank=True)
+    parser_version = models.CharField(max_length=32, blank=True)
+    parse_warnings = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return self.label or self.name
+
+
+class ConfigEvidence(models.Model):
+    """One piece of configuration evidence about a unit (PRD §7).
+
+    The three kinds stay distinct: what was approved, what was recorded as
+    flashed, and what was actually read back. Rows are never edited; newer
+    evidence for the same unit and kind points at the row it replaces.
+    """
+
+    BASELINE, FLASHED, READBACK = "approved_baseline", "flashed_record", "readback"
+    KIND_CHOICES = [(BASELINE, "Approved baseline"), (FLASHED, "Flashed record"),
+                    (READBACK, "Read-back")]
+    CONFIRMED, PROBABLE, UNKNOWN = "confirmed", "probable", "unknown"
+    CONFIDENCE_CHOICES = [(c, c.title()) for c in (CONFIRMED, PROBABLE, UNKNOWN)]
+
+    kind = models.CharField(max_length=24, choices=KIND_CHOICES)
+    file = models.ForeignKey(ParameterFile, on_delete=models.PROTECT,
+                             related_name="evidence")
+    fc = models.ForeignKey(FlightController, null=True, blank=True,
+                           on_delete=models.PROTECT, related_name="config_evidence")
+    unit_identity_confidence = models.CharField(max_length=16,
+                                                choices=CONFIDENCE_CHOICES,
+                                                default=UNKNOWN)
+    firmware_version = models.CharField(max_length=64, blank=True)
+    firmware_build = models.ForeignKey(FirmwareBuild, null=True, blank=True,
+                                       on_delete=models.PROTECT, related_name="+")
+    gcs_version = models.CharField(max_length=64, blank=True)
+    hardware_revision = models.CharField(max_length=64, blank=True)
+    captured_at = models.DateTimeField()
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                    on_delete=models.SET_NULL, related_name="+")
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    tool = models.CharField(max_length=120, blank=True,
+                            help_text="e.g. 'Mission Planner export'")
+    source_note = models.TextField(blank=True)
+    supersedes = models.OneToOneField("self", null=True, blank=True,
+                                      on_delete=models.PROTECT,
+                                      related_name="superseded_by")
+
+    class Meta:
+        ordering = ("-captured_at", "-id")
+
+    def __str__(self):
+        return f"{self.get_kind_display()} #{self.pk}"
+
+
+class BaselineApproval(models.Model):
+    """An authenticated approval of a baseline revision; never a typed name."""
+
+    evidence = models.OneToOneField(ConfigEvidence, on_delete=models.PROTECT,
+                                    related_name="approval")
+    revision = models.CharField(max_length=64)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                    related_name="+")
+    approved_at = models.DateTimeField(auto_now_add=True)
+    compatibility = models.TextField(blank=True)
+    scope = models.TextField(blank=True)
+
+
+class IssueEvidenceLink(models.Model):
+    issue = models.ForeignKey("issues.Issue", on_delete=models.CASCADE,
+                              related_name="evidence_links")
+    evidence = models.ForeignKey(ConfigEvidence, on_delete=models.PROTECT,
+                                 related_name="issue_links")
+    linked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                  on_delete=models.SET_NULL, related_name="+")
+    linked_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("linked_at", "id")
+        constraints = [models.UniqueConstraint(fields=["issue", "evidence"],
+                                               name="one_link_per_issue_evidence")]
+
+
+class ParameterComparison(models.Model):
+    """A recorded comparison. It lists differences only: there is
+    deliberately no safe/unsafe verdict (PRD §7)."""
+
+    left_evidence = models.ForeignKey(ConfigEvidence, on_delete=models.PROTECT,
+                                      related_name="+")
+    right_evidence = models.ForeignKey(ConfigEvidence, on_delete=models.PROTECT,
+                                       related_name="+")
+    tolerance = models.JSONField(default=dict, blank=True)
+    result = models.JSONField()
+    parser_versions = models.JSONField(default=dict)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                   on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+
+
 class FCEvent(models.Model):
     """Denormalised timeline entry so the FC history page is one cheap query
     rather than a fan-out across six tables (PRD §12)."""
