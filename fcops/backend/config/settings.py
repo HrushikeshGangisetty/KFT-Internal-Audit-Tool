@@ -184,6 +184,32 @@ FC_VISIBLE_DEPARTMENT_KINDS = [k.strip() for k in env(
 # issues remain unverified.
 ALLOW_MANAGER_DEVIATION = env_bool("ALLOW_MANAGER_DEVIATION", True)
 
+# --- Jobs, worker and alerts (WP3) -----------------------------------------
+APP_VERSION = env("APP_VERSION", "dev")
+JOB_MAX_ATTEMPTS = int(env("JOB_MAX_ATTEMPTS", "5"))
+JOB_RETRY_BASE_SECONDS = int(env("JOB_RETRY_BASE_SECONDS", "30"))
+JOB_LOCK_TIMEOUT_SECONDS = int(env("JOB_LOCK_TIMEOUT_SECONDS", "600"))
+PERIODIC_INTERVAL_SECONDS = int(env("PERIODIC_INTERVAL_SECONDS", "60"))
+WORKER_STALE_SECONDS = int(env("WORKER_STALE_SECONDS", "180"))
+# Console in development; the approved provider only after the decision.
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "fcops@localhost")
+SITE_URL = env("SITE_URL", "http://localhost:8000")
+# PLACEHOLDER channels until the after-hours decision (PRD §15).
+ALERT_CHANNELS_URGENT = [c for c in env("ALERT_CHANNELS_URGENT", "in_app,email").split(",") if c]
+ALERT_CHANNELS_NORMAL = [c for c in env("ALERT_CHANNELS_NORMAL", "in_app").split(",") if c]
+
+# PLACEHOLDER working calendar (Appendix A): Monday=0.
+WORKING_DAYS = [int(d) for d in env("WORKING_DAYS", "0,1,2,3,4").split(",") if d]
+WORKING_HOURS = tuple(int(h) for h in env("WORKING_HOURS", "10,18").split(","))
+WORKING_TIMEZONE = env("WORKING_TIMEZONE", "Asia/Kolkata")
+
+# --- Issues, routing and handoffs (WP4, WP5) -------------------------------
+ATTACHMENT_MAX_BYTES = int(env("ATTACHMENT_MAX_BYTES", str(10 * 1024 * 1024)))
+# PLACEHOLDER until the PRD decision: the previous team keeps read access
+# after an accepted handoff ("read") or loses it ("none").
+HANDOFF_PREVIOUS_TEAM_ACCESS = env("HANDOFF_PREVIOUS_TEAM_ACCESS", "read")
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

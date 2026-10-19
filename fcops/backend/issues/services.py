@@ -1,18 +1,20 @@
 """Issue workflow services (PRD §9, §10, §11, §17)."""
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from core import audit
+from core import alerts, audit
 from core.exceptions import WorkflowError
 from core.models import AuditLogEntry, Notification
 from fc.models import FirmwareRecord, StageRecord
 from fc.services import log_event
 
-from .models import (ISSUE_TRANSITIONS, Category, Issue, IssueInvestigationNote,
+from .models import (ISSUE_TRANSITIONS, Category, Handoff, Issue, IssueAttachment,
+                     IssueEvent, IssueInvestigationNote, IssueKind,
                      IssueParticipant, IssueReassignmentLog, IssueStatus,
-                     KnownIssue, Severity)
+                     IssueUnitLink, KnownIssue, ProductArea, Queue, RoutingRule,
+                     Severity, Urgency)
 from .search import reindex_issue, reindex_known_issue
 
 
@@ -76,18 +78,34 @@ def capture_versions(fc):
     return data
 
 
+def _recompute_fc(issue):
+    if issue.fc_id:
+        issue.fc.recompute_status()
+
+
 @transaction.atomic
 def create_issue(*, fc, title, symptoms, actor, discovered_stage=None,
                  discovered_stage_record=None, description="", category=None,
                  severity=Severity.MAJOR, assigned_department=None,
                  assigned_person=None, symptom_tags=None, version_overrides=None,
-                 fail_stage=True):
-    discovered_stage = discovered_stage or fc.current_stage
-    if discovered_stage_record is None:
-        discovered_stage_record = (fc.stage_records.filter(stage=discovered_stage)
-                                   .order_by("-attempt").first())
-    versions = capture_versions(fc)
+                 fail_stage=True, blocks_stage=None, **report_fields):
+    """Create an issue, with or without an FC (WP4).
+
+    ``blocks_stage`` defaults to True for an issue raised against an FC from
+    the lifecycle (the pre-WP4 behaviour); a general report passes False.
+    """
+    if fc is not None:
+        discovered_stage = discovered_stage or fc.current_stage
+        if discovered_stage_record is None:
+            discovered_stage_record = (fc.stage_records.filter(stage=discovered_stage)
+                                       .order_by("-attempt").first())
+        versions = capture_versions(fc)
+    else:
+        discovered_stage, discovered_stage_record = discovered_stage or "", None
+        versions = {}
     versions.update({k: v for k, v in (version_overrides or {}).items() if v})
+    if blocks_stage is None:
+        blocks_stage = fc is not None
 
     issue = Issue.objects.create(
         key=generate_key(),
@@ -100,12 +118,16 @@ def create_issue(*, fc, title, symptoms, actor, discovered_stage=None,
         discovered_stage_record=discovered_stage_record,
         discovered_by=actor,
         discovering_department=getattr(actor, "department", None),
+        reporter=actor,
+        submitted_at=timezone.now(),
+        blocks_stage=blocks_stage and fc is not None,
         assigned_department=assigned_department,
         assigned_person=assigned_person,
         category=category or Category.UNKNOWN,
         severity=severity,
         status=IssueStatus.OPEN,
         **versions,
+        **report_fields,
     )
     reindex_issue(issue)
     audit.record(issue, AuditLogEntry.ACTION_CREATE, actor=actor,
@@ -127,7 +149,8 @@ def create_issue(*, fc, title, symptoms, actor, discovered_stage=None,
                 capability_grants__revoked_at__isnull=True):
             notify(manager, "HIGH_SEVERITY_ISSUE", issue)
 
-    fc.recompute_status()
+    if fc is not None:
+        fc.recompute_status()
     return issue
 
 
@@ -242,7 +265,7 @@ def change_status(issue, new_status, *, actor, note="", root_cause=None,
             notify(watcher, "ISSUE_STATUS", issue)
     if issue.known_issue_id:
         issue.known_issue.refresh_rollup()
-    issue.fc.recompute_status()
+    _recompute_fc(issue)
     return issue
 
 
@@ -264,7 +287,7 @@ def reopen(issue, *, actor, reason):
                         note=f"REOPENED: {reason}", actor=actor)
     log_event(issue.fc, "ISSUE_REOPENED", f"{issue.key} reopened", detail=reason,
               stage=issue.discovered_stage, actor=actor, issue=issue)
-    issue.fc.recompute_status()
+    _recompute_fc(issue)
     return issue
 
 
@@ -276,6 +299,8 @@ def set_waiting(issue, *, actor, waiting, reason=""):
     issue.save(update_fields=["is_waiting", "waiting_reason", "updated_at"])
     audit.record_change(issue, AuditLogEntry.ACTION_UPDATE, before,
                         note="Waiting flag changed", actor=actor)
+    record_event(issue, "waiting_set" if waiting else "waiting_cleared", actor,
+                 reason=issue.waiting_reason)
     return issue
 
 
@@ -358,3 +383,307 @@ def remove_participant(participant, *, actor):
                         "role": participant.role},
                  note=f"{participant.role.title()} removed", fc=participant.issue.fc)
     return participant
+
+
+# --- WP4: general reports, discovery facts, unit links ----------------------
+# Write-once discovery facts and fields only the routing/handoff services
+# may change. Neither the API nor edit_issue can touch them.
+IMMUTABLE_FIELDS = ("fc", "discovered_stage", "discovered_stage_record",
+                    "discovering_department", "discovered_by", "reporter",
+                    "submitted_at")
+SERVICE_OWNED_FIELDS = ("queue", "accountable_user", "acknowledged_at",
+                        "acknowledged_by", "blocks_stage", "kind", "parent")
+
+
+@transaction.atomic
+def edit_issue(issue, *, actor, changes):
+    """Edit plain fields; discovery facts and service-owned fields are
+    refused rather than silently ignored."""
+    refused = sorted(set(changes) & set(IMMUTABLE_FIELDS + SERVICE_OWNED_FIELDS))
+    if refused:
+        raise WorkflowError(f"These fields cannot be edited: {', '.join(refused)}.",
+                            code="immutable_field")
+    before = audit.snapshot(issue)
+    for field, value in changes.items():
+        setattr(issue, field, value)
+    issue.save()
+    reindex_issue(issue)
+    audit.record_change(issue, AuditLogEntry.ACTION_UPDATE, before,
+                        note="Issue edited", actor=actor)
+    return issue
+
+
+def record_event(issue, type, actor=None, **data):
+    return IssueEvent.objects.create(issue=issue, type=type, actor=actor,
+                                     data=data)
+
+
+@transaction.atomic
+def submit_report(*, reporter, title, symptom, urgency, impact=None,
+                  product_area=None, kind=IssueKind.STANDALONE, parent=None,
+                  fc=None, **optional):
+    """A quick report (scenario 1): only title, symptom and urgency are
+    required; everything else may be Unknown. Returns the routed issue."""
+    title, symptom = (title or "").strip(), (symptom or "").strip()
+    if not title or not symptom:
+        raise WorkflowError("A title and a symptom are required.", code="report_incomplete")
+    if urgency not in Urgency.values:
+        raise WorkflowError("Urgency must be urgent, normal or unknown.",
+                            code="report_incomplete")
+    if kind == IssueKind.WORKSTREAM:
+        if parent is None or parent.kind != IssueKind.INCIDENT:
+            raise WorkflowError("A workstream needs a parent incident.",
+                                code="invalid_parent")
+    elif parent is not None:
+        raise WorkflowError("Only a workstream can have a parent.", code="invalid_parent")
+    issue = create_issue(
+        fc=fc, title=title, symptoms=symptom, actor=reporter, blocks_stage=False,
+        urgency=urgency, impact=impact or "UNKNOWN",
+        product_area=product_area or ProductArea.UNKNOWN, kind=kind, parent=parent,
+        **optional)
+    record_event(issue, "submitted", reporter, urgency=urgency,
+                 product_area=issue.product_area)
+    return route(issue)
+
+
+@transaction.atomic
+def add_attachment(issue, *, upload, actor):
+    if upload.size > settings.ATTACHMENT_MAX_BYTES:
+        raise WorkflowError(
+            f"{upload.name} is larger than {settings.ATTACHMENT_MAX_BYTES} bytes.",
+            code="attachment_too_large")
+    obj = IssueAttachment.objects.create(
+        issue=issue, file=upload, uploaded_by=actor, original_name=upload.name,
+        content_type=getattr(upload, "content_type", "") or "", size=upload.size)
+    audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=actor,
+                 after={"attachment": obj.original_name},
+                 note="Attachment added", fc=issue.fc)
+    return obj
+
+
+@transaction.atomic
+def link_unit(issue, *, fc, actor, reason):
+    """Record that a unit is involved, without editing the discovery FC and
+    without blocking that unit's stage."""
+    if not (reason or "").strip():
+        raise WorkflowError("Linking a unit requires a reason.", code="reason_required")
+    link = IssueUnitLink.objects.create(issue=issue, fc=fc, linked_by=actor,
+                                        reason=reason)
+    record_event(issue, "unit_linked", actor, fc=fc.pk, reason=reason)
+    audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=actor,
+                 after={"unit_linked": fc.serial}, note=reason, fc=fc)
+    return link
+
+
+@transaction.atomic
+def set_blocks_stage(issue, *, actor, blocks, reason):
+    """The lifecycle decision that an issue blocks its FC's stage.
+    PLACEHOLDER authority: department leads and managers."""
+    if issue.fc_id is None:
+        raise WorkflowError("Only an issue discovered on an FC can block a stage.",
+                            code="no_fc")
+    if not actor.is_lead_role:
+        raise WorkflowError("Only a department lead or manager may decide whether "
+                            "an issue blocks a stage.", code="forbidden")
+    if not (reason or "").strip():
+        raise WorkflowError("A reason is required.", code="reason_required")
+    before = audit.snapshot(issue)
+    issue.blocks_stage = bool(blocks)
+    issue.save(update_fields=["blocks_stage", "updated_at"])
+    record_event(issue, "blocks_stage_set", actor, blocks=issue.blocks_stage,
+                 reason=reason)
+    audit.record_change(issue, AuditLogEntry.ACTION_UPDATE, before, note=reason,
+                        actor=actor)
+    issue.fc.recompute_status()
+    return issue
+
+
+# --- WP5: routing, acknowledgement, ownership, handoffs ---------------------
+def _lock(issue):
+    return Issue.objects.select_for_update().get(pk=issue.pk)
+
+
+def _managers():
+    from accounts.models import Capability, User
+    return list(User.objects.filter(
+        is_active=True, capability_grants__capability=Capability.IS_MANAGER,
+        capability_grants__revoked_at__isnull=True))
+
+
+def _alert(issue, step, recipients, urgency=None):
+    urgency = urgency or (alerts.URGENT if issue.urgency == Urgency.URGENT else "normal")
+    head = issue.queue.head if issue.queue_id else None
+    created = alerts.dispatch_alert(
+        f"issue:{issue.pk}:{step}", recipients, urgency, ("issue", issue.pk),
+        kind="ISSUE_ALERT",
+        summary={"ref": issue.key, "urgency": urgency,
+                 "queue": issue.queue.name if issue.queue_id else "",
+                 "link": f"/issues/{issue.pk}"},
+        on_failure=[head, *_managers()])
+    if created:
+        record_event(issue, "notified", None, step=step,
+                     recipients=sorted({d.recipient_id for d in created}),
+                     channels=sorted({d.channel for d in created}))
+
+
+def pick_queue(product_area):
+    rule = (RoutingRule.objects.filter(product_area=product_area)
+            .select_related("queue").order_by("priority", "id").first())
+    return rule.queue if rule else Queue.objects.filter(is_fallback=True).first()
+
+
+@transaction.atomic
+def route(issue, actor=None):
+    """Send the issue to its queue; the queue head is accountable until a
+    member accepts ownership. With no fallback queue configured the report
+    stays unrouted rather than failing."""
+    issue = _lock(issue)
+    queue = pick_queue(issue.product_area)
+    if queue is None:
+        return issue
+    issue.queue = queue
+    issue.accountable_user = queue.head
+    if queue.department_id:
+        issue.assigned_department_id = queue.department_id
+    issue.save(update_fields=["queue", "accountable_user", "assigned_department",
+                              "updated_at"])
+    now = timezone.now()
+    record_event(issue, "routed", actor, queue=queue.pk, queue_name=queue.name,
+                 fallback=queue.is_fallback,
+                 seconds_since_submission=(now - issue.submitted_at).total_seconds())
+    record_event(issue, "assigned", actor, accountable=queue.head_id, queue=queue.pk)
+    _alert(issue, f"routed:{queue.pk}", [queue.head])
+    return issue
+
+
+def _queue_leads(queue):
+    return {queue.head_id, queue.backup_id} if queue else set()
+
+
+@transaction.atomic
+def acknowledge(issue, *, user):
+    """Explicit acknowledgement by the accountable person, the queue head or
+    its backup. Idempotent; viewing an issue never calls this."""
+    issue = _lock(issue)
+    if user.pk not in {issue.accountable_user_id} | _queue_leads(issue.queue):
+        raise WorkflowError("Only the accountable person, the queue head or the "
+                            "backup can acknowledge this issue.", code="forbidden")
+    if issue.acknowledged_at is not None:
+        return issue
+    issue.acknowledged_at = timezone.now()
+    issue.acknowledged_by = user
+    issue.save(update_fields=["acknowledged_at", "acknowledged_by", "updated_at"])
+    record_event(issue, "acknowledged", user, seconds_since_submission=(
+        issue.acknowledged_at - issue.submitted_at).total_seconds())
+    audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=user,
+                 after={"acknowledged_by": user.pk}, note="Acknowledged")
+    return issue
+
+
+@transaction.atomic
+def accept_ownership(issue, *, actor, member):
+    """The queue head (or backup) names the member who owns the issue."""
+    from access.policy import active_memberships
+    issue = _lock(issue)
+    if actor.pk not in _queue_leads(issue.queue):
+        raise WorkflowError("Only the queue head or backup can assign ownership.",
+                            code="forbidden")
+    dept = issue.queue.department_id
+    if dept and not active_memberships(member).filter(department_id=dept).exists():
+        raise WorkflowError("The owner must be an active member of the queue's team.",
+                            code="not_team_member")
+    before = audit.snapshot(issue)
+    issue.accountable_user = member
+    issue.save(update_fields=["accountable_user", "updated_at"])
+    record_event(issue, "ownership_accepted", actor, accountable=member.pk)
+    audit.record_change(issue, AuditLogEntry.ACTION_REASSIGN, before,
+                        note="Ownership accepted", actor=actor)
+    notify(member, "ISSUE_ASSIGNED", issue)
+    return issue
+
+
+@transaction.atomic
+def propose_handoff(issue, *, actor, to_department, reason, to_user=None):
+    """Propose moving the issue to another team. Accountability does not
+    change until the receiver accepts."""
+    from access.policy import is_head_or_manager
+    if not (reason or "").strip():
+        raise WorkflowError("A handoff needs a reason.", code="reason_required")
+    issue = _lock(issue)
+    if not (actor.pk in {issue.accountable_user_id} | _queue_leads(issue.queue)
+            or is_head_or_manager(actor)):
+        raise WorkflowError("Only the accountable person, the queue head or backup, "
+                            "or a head may propose a handoff.", code="forbidden")
+    if issue.handoffs.filter(status=Handoff.PENDING).exists():
+        raise WorkflowError("A handoff is already pending for this issue.",
+                            code="handoff_pending")
+    try:
+        with transaction.atomic():
+            handoff = Handoff.objects.create(
+                issue=issue, from_user=issue.accountable_user,
+                from_department=issue.assigned_department, to_department=to_department,
+                to_user=to_user, reason=reason, proposed_by=actor)
+    except IntegrityError:
+        raise WorkflowError("A handoff is already pending for this issue.",
+                            code="handoff_pending")
+    record_event(issue, "handoff_proposed", actor, handoff=handoff.pk,
+                 to_department=to_department.pk,
+                 to_user=getattr(to_user, "pk", None), reason=reason)
+    audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=actor,
+                 after={"handoff_to": to_department.pk}, note=reason)
+    queue = handoff.to_queue
+    _alert(issue, f"handoff:{handoff.pk}", [to_user] if to_user else
+           [getattr(queue, "head", None)])
+    return handoff
+
+
+def can_respond(handoff, user):
+    receivers = {handoff.to_user_id} | _queue_leads(handoff.to_queue)
+    return user.pk in receivers - {None}
+
+
+@transaction.atomic
+def respond_handoff(handoff, *, actor, accept, reason=""):
+    issue = _lock(handoff.issue)
+    handoff = Handoff.objects.select_for_update().get(pk=handoff.pk)
+    if handoff.status != Handoff.PENDING:
+        raise WorkflowError("This handoff is no longer pending.", code="handoff_closed")
+    if not can_respond(handoff, actor):
+        raise WorkflowError("Only the receiving head, backup or named recipient can "
+                            "respond.", code="forbidden")
+    if not accept and not (reason or "").strip():
+        raise WorkflowError("Rejecting a handoff needs a reason.", code="reason_required")
+    handoff.status = Handoff.ACCEPTED if accept else Handoff.REJECTED
+    handoff.responded_by, handoff.responded_at = actor, timezone.now()
+    handoff.response_reason = reason or ""
+    handoff.save(update_fields=["status", "responded_by", "responded_at",
+                                "response_reason"])
+    if not accept:
+        record_event(issue, "handoff_rejected", actor, handoff=handoff.pk,
+                     reason=reason)
+        audit.record(issue, AuditLogEntry.ACTION_UPDATE, actor=actor,
+                     after={"handoff_rejected": handoff.pk}, note=reason)
+        return handoff
+    before = audit.snapshot(issue)
+    queue = handoff.to_queue
+    new_owner = handoff.to_user or (queue.head if queue else actor)
+    from_department, from_person = issue.assigned_department, issue.accountable_user
+    issue.queue = queue or issue.queue
+    issue.assigned_department = handoff.to_department
+    issue.accountable_user = new_owner
+    # The acknowledgement clock restarts for the new owner.
+    issue.acknowledged_at, issue.acknowledged_by = None, None
+    issue.save(update_fields=["queue", "assigned_department", "accountable_user",
+                              "acknowledged_at", "acknowledged_by", "updated_at"])
+    IssueReassignmentLog.objects.create(
+        issue=issue, from_department=from_department,
+        to_department=handoff.to_department, from_person=from_person,
+        to_person=new_owner, reason=f"Handoff accepted: {handoff.reason}", actor=actor)
+    record_event(issue, "handoff_accepted", actor, handoff=handoff.pk,
+                 accountable=new_owner.pk)
+    record_event(issue, "assigned", actor, accountable=new_owner.pk,
+                 queue=issue.queue_id)
+    audit.record_change(issue, AuditLogEntry.ACTION_REASSIGN, before,
+                        note=f"Handoff {handoff.pk} accepted", actor=actor)
+    _alert(issue, f"handoff:{handoff.pk}:accepted", [new_owner])
+    return handoff

@@ -71,7 +71,7 @@ class FlightController(TimeStampedModel):
     def open_blocking_issues(self):
         from issues.models import Issue, IssueStatus, Severity
         return self.issues.filter(
-            severity__in=[Severity.BLOCKER, Severity.MAJOR],
+            blocks_stage=True, severity__in=[Severity.BLOCKER, Severity.MAJOR],
         ).exclude(status__in=[IssueStatus.CLOSED])
 
     @property
@@ -80,12 +80,13 @@ class FlightController(TimeStampedModel):
         return self.issues.exclude(status=IssueStatus.CLOSED)
 
     def recompute_status(self, save=True):
-        """FC status is derived, never hand-edited: an FC with any open issue
-        is BLOCKED; otherwise its status follows its current stage."""
+        """FC status is derived, never hand-edited: an FC with any open
+        stage-blocking issue is BLOCKED; otherwise its status follows its
+        current stage. An issue merely linked to the FC does not block (WP4)."""
         from issues.models import IssueStatus
         if self.status in (FCStatus.APPROVED, FCStatus.REJECTED):
             return self.status
-        has_open = self.issues.exclude(
+        has_open = self.issues.filter(blocks_stage=True).exclude(
             status__in=[IssueStatus.CLOSED, IssueStatus.VERIFIED]).exists()
         if has_open:
             new_status = FCStatus.BLOCKED

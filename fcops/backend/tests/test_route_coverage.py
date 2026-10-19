@@ -8,9 +8,10 @@ from rest_framework.views import APIView
 
 from access.mixins import ScopedViewSetMixin
 from accounts.views import CsrfView, LoginView, LogoutView, MeView
-from core.views import DashboardSummaryView, HealthView
+from core.views import DashboardSummaryView, HealthView, WorkerHealthView
 from fc.views import LifecycleMetaView
 from issues.models import Issue
+from issues.views import MyQueueView
 
 ALLOWLIST = {
     CsrfView,                    # CSRF cookie/token, no records
@@ -22,6 +23,8 @@ ALLOWLIST = {
     LifecycleMetaView,           # stage enum metadata only
     DashboardSummaryView,        # aggregates built from access.policy scopes;
                                  # per-actor counts covered in test_access_matrix
+    WorkerHealthView,            # job/alert counts only; managers and admins
+    MyQueueView,                 # built from access.policy.visible_issues
 }
 
 

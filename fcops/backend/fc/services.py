@@ -20,6 +20,8 @@ AUDIT_FIELDS = None
 
 def log_event(fc, kind, title, *, detail="", stage="", actor=None, issue=None,
               payload=None):
+    if fc is None:
+        return None  # a general issue has no FC timeline (WP4)
     return FCEvent.objects.create(fc=fc, kind=kind, title=title, detail=detail,
                                   stage=stage or "", actor=actor, issue=issue,
                                   payload=payload)
@@ -108,7 +110,7 @@ def stage_blockers(fc, stage=None):
 
     stage = stage or fc.current_stage
     reasons = []
-    issues = (fc.issues.filter(discovered_stage=stage)
+    issues = (fc.issues.filter(discovered_stage=stage, blocks_stage=True)
               .exclude(status__in=[IssueStatus.VERIFIED, IssueStatus.CLOSED])
               .select_related("resolved_by"))
     for issue in issues:
@@ -263,7 +265,7 @@ def approval_blockers(fc):
         rec = current_stage_record(fc, stage)
         if rec is None or rec.status != StageStatus.PASSED:
             blockers.append(f"{Stage(stage).label} has not passed.")
-    for issue in fc.issues.all():
+    for issue in fc.issues.filter(blocks_stage=True):
         if issue.status in (IssueStatus.OPEN, IssueStatus.INVESTIGATING):
             blockers.append(f"{issue.key} is unresolved ({issue.get_status_display()}).")
         elif issue.status == IssueStatus.RESOLVED:

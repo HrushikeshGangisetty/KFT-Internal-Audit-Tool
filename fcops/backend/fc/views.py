@@ -274,7 +274,10 @@ class FlightControllerViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     def issues(self, request, pk=None):
         from issues.serializers import IssueListSerializer
         fc = self.get_object()
-        qs = policy.visible_issues(request.user).filter(fc=fc).select_related(
+        from issues.models import IssueUnitLink
+        linked = IssueUnitLink.objects.filter(fc=fc).values("issue_id")
+        qs = policy.visible_issues(request.user).filter(
+            Q(fc=fc) | Q(pk__in=linked)).select_related(
             "assigned_department", "discovering_department", "assigned_person",
             "discovered_by")
         return Response(IssueListSerializer(qs, many=True).data)

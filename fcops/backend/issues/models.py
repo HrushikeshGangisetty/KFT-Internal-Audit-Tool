@@ -3,6 +3,7 @@ from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
 from django.db import models
+from django.utils import timezone
 
 from accounts.models import Department
 from core.models import TimeStampedModel
@@ -41,6 +42,37 @@ class Category(models.TextChoices):
     MECHANICAL = "MECHANICAL", "Mechanical"
     PROCESS = "PROCESS", "Process"
     UNKNOWN = "UNKNOWN", "Unknown"
+
+
+class ProductArea(models.TextChoices):
+    GCS = "GCS", "GCS"
+    CONFIGURATOR = "CONFIGURATOR", "Configurator"
+    FIRMWARE = "FIRMWARE", "Firmware"
+    PARAMETERS = "PARAMETERS", "Parameters"
+    FC_HARDWARE = "FC_HARDWARE", "FC hardware"
+    MECHANICAL = "MECHANICAL", "Mechanical"
+    ROVER = "ROVER", "Rover"
+    OTHER = "OTHER", "Other"
+    UNKNOWN = "UNKNOWN", "Unknown"
+
+
+class Impact(models.TextChoices):
+    STOPS_WORK = "STOPS_WORK", "Stops work or operation"
+    DEGRADED = "DEGRADED", "Degraded, workaround exists"
+    MINOR = "MINOR", "Minor"
+    UNKNOWN = "UNKNOWN", "Unknown"
+
+
+class Urgency(models.TextChoices):
+    URGENT = "urgent", "Urgent"
+    NORMAL = "normal", "Normal"
+    UNKNOWN = "unknown", "Unknown"
+
+
+class IssueKind(models.TextChoices):
+    STANDALONE = "standalone", "Standalone"
+    INCIDENT = "incident", "Incident"
+    WORKSTREAM = "workstream", "Workstream"
 
 
 class KnownIssue(TimeStampedModel):
@@ -112,7 +144,8 @@ class KnownIssue(TimeStampedModel):
 
 
 class Issue(TimeStampedModel):
-    """An issue is always anchored to an FC and a lifecycle stage.
+    """An issue may concern an FC and a lifecycle stage, or neither (WP4):
+    a general report needs only a title, a symptom and an urgency.
 
     The discovery side (where the symptom was seen) and the ownership side
     (where the problem actually originated) are independent fields — this is
@@ -121,12 +154,12 @@ class Issue(TimeStampedModel):
 
     key = models.CharField(max_length=24, unique=True, db_index=True,
                            help_text="ISS-YYYY-NNNNN")
-    fc = models.ForeignKey("fc.FlightController", on_delete=models.CASCADE,
-                           related_name="issues")
+    fc = models.ForeignKey("fc.FlightController", null=True, blank=True,
+                           on_delete=models.CASCADE, related_name="issues")
 
-    # --- discovery (immutable once set) ---
+    # --- discovery (write-once, WP4: see services.IMMUTABLE_FIELDS) ---
     discovered_stage = models.CharField(max_length=32, choices=Stage.choices,
-                                        db_index=True)
+                                        blank=True, db_index=True)
     discovered_stage_record = models.ForeignKey(
         "fc.StageRecord", null=True, blank=True, on_delete=models.SET_NULL,
         related_name="discovered_issues")
@@ -136,6 +169,41 @@ class Issue(TimeStampedModel):
     discovering_department = models.ForeignKey(
         Department, null=True, on_delete=models.SET_NULL,
         related_name="discovered_issues")
+
+    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                 on_delete=models.SET_NULL,
+                                 related_name="reported_issues")
+    submitted_at = models.DateTimeField(default=timezone.now)
+
+    # --- report context (WP4) ---
+    product_area = models.CharField(max_length=16, choices=ProductArea.choices,
+                                    default=ProductArea.UNKNOWN, db_index=True)
+    impact = models.CharField(max_length=16, choices=Impact.choices,
+                              default=Impact.UNKNOWN)
+    urgency = models.CharField(max_length=8, choices=Urgency.choices,
+                               default=Urgency.UNKNOWN, db_index=True)
+    occurred_at_approx = models.CharField(max_length=120, blank=True)
+    location_context = models.CharField(max_length=255, blank=True)
+    reproduction_notes = models.TextField(blank=True)
+    kind = models.CharField(max_length=16, choices=IssueKind.choices,
+                            default=IssueKind.STANDALONE)
+    parent = models.ForeignKey("self", null=True, blank=True,
+                               on_delete=models.PROTECT, related_name="workstreams")
+    # An issue on an FC blocks its stage only once someone with lifecycle
+    # authority decides so. Issues raised from the FC lifecycle (and every
+    # pre-WP4 row) carry that decision; general reports do not.
+    blocks_stage = models.BooleanField(default=False)
+
+    # --- routing and accountability (WP5) ---
+    queue = models.ForeignKey("Queue", null=True, blank=True,
+                              on_delete=models.PROTECT, related_name="issues")
+    accountable_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="accountable_issues")
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="acknowledged_issues")
 
     # --- ownership / root cause (can change, always logged) ---
     assigned_department = models.ForeignKey(
@@ -311,3 +379,120 @@ class IssueParticipant(models.Model):
                                     condition=models.Q(removed_at__isnull=True),
                                     name="one_active_participation_per_role"),
         ]
+
+
+class IssueUnitLink(models.Model):
+    """A unit linked after discovery (WP4). The discovery FC is never edited;
+    a link records later evidence and never blocks a stage by itself."""
+
+    issue = models.ForeignKey(Issue, on_delete=models.CASCADE,
+                              related_name="unit_links")
+    fc = models.ForeignKey("fc.FlightController", on_delete=models.PROTECT,
+                           related_name="issue_links")
+    linked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                  on_delete=models.SET_NULL, related_name="+")
+    linked_at = models.DateTimeField(auto_now_add=True)
+    reason = models.TextField()
+
+    class Meta:
+        ordering = ("linked_at", "id")
+
+
+# --- WP5: routing, events and handoffs ---------------------------------------
+class Queue(models.Model):
+    """Where reports land. Head and backup are required; exactly one queue is
+    the fallback for unknown or unmatched reports (coordinator as head,
+    manager as backup). People are PLACEHOLDER data until the PRD decision."""
+
+    name = models.CharField(max_length=120, unique=True)
+    department = models.OneToOneField(Department, null=True, blank=True,
+                                      on_delete=models.PROTECT, related_name="queue")
+    head = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                             related_name="headed_queues")
+    backup = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                               related_name="backed_up_queues")
+    is_fallback = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ("name",)
+        constraints = [models.UniqueConstraint(
+            fields=["is_fallback"], condition=models.Q(is_fallback=True),
+            name="one_fallback_queue")]
+
+    def __str__(self):
+        return self.name
+
+
+class RoutingRule(models.Model):
+    product_area = models.CharField(max_length=16, choices=ProductArea.choices)
+    queue = models.ForeignKey(Queue, on_delete=models.CASCADE, related_name="rules")
+    priority = models.IntegerField(default=100, help_text="Lower wins")
+
+    class Meta:
+        ordering = ("priority", "id")
+
+
+class IssueEvent(models.Model):
+    """Append-only issue timeline and measurement source (PRD §14). A
+    database trigger refuses UPDATE and DELETE, as for the audit log."""
+
+    TYPES = ("submitted", "routed", "assigned", "notified", "acknowledged",
+             "handoff_proposed", "handoff_accepted", "handoff_rejected",
+             "ownership_accepted", "waiting_set", "waiting_cleared",
+             "reminder_sent", "escalated", "unit_linked", "blocks_stage_set")
+
+    issue = models.ForeignKey(Issue, on_delete=models.PROTECT, related_name="events")
+    type = models.CharField(max_length=24, choices=[(t, t) for t in TYPES],
+                            db_index=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                              on_delete=models.SET_NULL, related_name="+")
+    at = models.DateTimeField(default=timezone.now, db_index=True)
+    data = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ("at", "id")
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            raise PermissionError("Issue events are append-only.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise PermissionError("Issue events cannot be deleted.")
+
+
+class Handoff(models.Model):
+    """A proposal to move an issue to another team. Accountability stays with
+    the current owner until the receiver accepts (PRD §6.2)."""
+
+    PENDING, ACCEPTED, REJECTED, WITHDRAWN = "pending", "accepted", "rejected", "withdrawn"
+    STATUS_CHOICES = [(x, x) for x in (PENDING, ACCEPTED, REJECTED, WITHDRAWN)]
+
+    issue = models.ForeignKey(Issue, on_delete=models.CASCADE, related_name="handoffs")
+    from_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                  on_delete=models.SET_NULL, related_name="+")
+    from_department = models.ForeignKey(Department, null=True, blank=True,
+                                        on_delete=models.SET_NULL, related_name="+")
+    to_department = models.ForeignKey(Department, on_delete=models.PROTECT,
+                                      related_name="+")
+    to_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                on_delete=models.SET_NULL, related_name="+")
+    reason = models.TextField()
+    proposed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                    on_delete=models.SET_NULL, related_name="+")
+    proposed_at = models.DateTimeField(default=timezone.now)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=PENDING)
+    responded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                     on_delete=models.SET_NULL, related_name="+")
+    responded_at = models.DateTimeField(null=True, blank=True)
+    response_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ("proposed_at", "id")
+        constraints = [models.UniqueConstraint(
+            fields=["issue"], condition=models.Q(status="pending"),
+            name="one_pending_handoff_per_issue")]
+
+    @property
+    def to_queue(self):
+        return Queue.objects.filter(department_id=self.to_department_id).first()

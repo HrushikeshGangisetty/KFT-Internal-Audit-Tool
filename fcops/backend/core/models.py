@@ -85,3 +85,84 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.recipient_id}: {self.kind}"
+
+
+# --- WP3: background jobs, worker heartbeat, working calendar, alerts -------
+class Job(models.Model):
+    """A unit of deferred work. Rows are written inside the caller's
+    transaction, so a rolled-back transaction leaves no job behind."""
+
+    QUEUED, RUNNING, SUCCEEDED, FAILED, DEAD = (
+        "queued", "running", "succeeded", "failed", "dead")
+    STATUS_CHOICES = [(s, s) for s in (QUEUED, RUNNING, SUCCEEDED, FAILED, DEAD)]
+
+    kind = models.CharField(max_length=64, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=QUEUED)
+    run_after = models.DateTimeField(db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=5)
+    last_error = models.TextField(blank=True)
+    locked_by = models.CharField(max_length=128, blank=True)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    idempotency_key = models.CharField(max_length=255, null=True, blank=True,
+                                       unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("run_after", "id")
+        indexes = [models.Index(fields=["status", "run_after"])]
+
+    def __str__(self):
+        return f"{self.kind}#{self.pk} {self.status}"
+
+
+class PeriodicTaskRun(models.Model):
+    """When each registered periodic task last ran (survives restarts)."""
+
+    name = models.CharField(max_length=64, primary_key=True)
+    last_run_at = models.DateTimeField()
+
+
+class WorkerHeartbeat(models.Model):
+    worker_id = models.CharField(max_length=128, primary_key=True)
+    last_seen = models.DateTimeField()
+    version = models.CharField(max_length=64, blank=True)
+
+
+class Holiday(models.Model):
+    date = models.DateField(unique=True)
+    name = models.CharField(max_length=120)
+
+    class Meta:
+        ordering = ("date",)
+
+    def __str__(self):
+        return f"{self.date} {self.name}"
+
+
+class AlertDelivery(models.Model):
+    """One alert to one person on one channel. The unique key is the
+    deduplication guarantee: a step can never alert the same person twice on
+    the same channel, however often it is dispatched or retried."""
+
+    PENDING, ACCEPTED, FAILED, UNKNOWN = "pending", "accepted", "failed", "unknown"
+    STATUS_CHOICES = [(s, s) for s in (PENDING, ACCEPTED, FAILED, UNKNOWN)]
+
+    alert_key = models.CharField(max_length=255)
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                  related_name="alert_deliveries")
+    channel = models.CharField(max_length=16)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=PENDING)
+    attempts = models.PositiveIntegerField(default=0)
+    provider_ref = models.CharField(max_length=255, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        constraints = [models.UniqueConstraint(
+            fields=["alert_key", "recipient", "channel"],
+            name="one_delivery_per_alert_recipient_channel")]

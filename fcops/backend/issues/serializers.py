@@ -4,9 +4,10 @@ from access import policy
 from access.mixins import ScopedPrimaryKeyRelatedField
 from fc.lifecycle import Stage
 
-from .models import (Category, Issue, IssueAttachment, IssueInvestigationNote,
-                     IssueParticipant, IssueReassignmentLog, IssueStatus,
-                     KnownIssue, Severity)
+from .models import (Category, Handoff, Impact, Issue, IssueAttachment, IssueEvent,
+                     IssueInvestigationNote, IssueKind, IssueParticipant,
+                     IssueReassignmentLog, IssueStatus, IssueUnitLink, KnownIssue,
+                     ProductArea, Severity, Urgency)
 
 
 def _scoped_issues(serializer):
@@ -113,7 +114,10 @@ class KnownIssueSerializer(serializers.ModelSerializer):
 
 
 class IssueListSerializer(serializers.ModelSerializer):
-    fc_serial = serializers.CharField(source="fc.serial", read_only=True)
+    fc_serial = serializers.CharField(source="fc.serial", read_only=True, default="")
+    queue_name = serializers.CharField(source="queue.name", read_only=True, default="")
+    accountable_user_name = serializers.CharField(
+        source="accountable_user.full_name", read_only=True, default="")
     stage_label = serializers.SerializerMethodField()
     discovering_department_name = serializers.CharField(
         source="discovering_department.name", read_only=True, default="")
@@ -132,10 +136,13 @@ class IssueListSerializer(serializers.ModelSerializer):
                   "assigned_person_name", "category", "severity", "status",
                   "is_waiting", "is_recurring", "known_issue", "firmware_version",
                   "hardware_revision", "gcs_version", "configurator_version",
-                  "created_at", "updated_at", "resolved_at", "rank")
+                  "created_at", "updated_at", "resolved_at", "rank",
+                  "product_area", "urgency", "impact", "kind", "parent",
+                  "blocks_stage", "queue", "queue_name", "accountable_user",
+                  "accountable_user_name", "acknowledged_at", "submitted_at")
 
     def get_stage_label(self, obj):
-        return Stage(obj.discovered_stage).label
+        return Stage(obj.discovered_stage).label if obj.discovered_stage else ""
 
 
 class ParticipantSerializer(serializers.ModelSerializer):
@@ -145,6 +152,37 @@ class ParticipantSerializer(serializers.ModelSerializer):
     class Meta:
         model = IssueParticipant
         fields = ("id", "user", "user_name", "role", "added_by", "added_at")
+
+
+class IssueEventSerializer(serializers.ModelSerializer):
+    actor_name = serializers.CharField(source="actor.full_name", read_only=True,
+                                       default="")
+
+    class Meta:
+        model = IssueEvent
+        fields = ("id", "type", "actor", "actor_name", "at", "data")
+
+
+class HandoffSerializer(serializers.ModelSerializer):
+    to_department_name = serializers.CharField(source="to_department.name",
+                                               read_only=True)
+    issue_key = serializers.CharField(source="issue.key", read_only=True)
+
+    class Meta:
+        model = Handoff
+        fields = ("id", "issue", "issue_key", "from_user", "from_department",
+                  "to_department", "to_department_name", "to_user", "reason",
+                  "proposed_by", "proposed_at", "status", "responded_by",
+                  "responded_at", "response_reason")
+        read_only_fields = fields
+
+
+class UnitLinkSerializer(serializers.ModelSerializer):
+    fc_serial = serializers.CharField(source="fc.serial", read_only=True)
+
+    class Meta:
+        model = IssueUnitLink
+        fields = ("id", "fc", "fc_serial", "linked_by", "linked_at", "reason")
 
 
 class IssueDetailSerializer(IssueListSerializer):
@@ -162,6 +200,12 @@ class IssueDetailSerializer(IssueListSerializer):
     root_cause_department_name = serializers.CharField(
         source="root_cause_department.name", read_only=True, default="")
     allowed_transitions = serializers.SerializerMethodField()
+    parent_summary = serializers.SerializerMethodField()
+    reporter_name = serializers.CharField(source="reporter.full_name", read_only=True,
+                                          default="")
+    events = IssueEventSerializer(many=True, read_only=True)
+    handoffs = HandoffSerializer(many=True, read_only=True)
+    unit_links = UnitLinkSerializer(many=True, read_only=True)
 
     class Meta(IssueListSerializer.Meta):
         fields = IssueListSerializer.Meta.fields + (
@@ -171,7 +215,25 @@ class IssueDetailSerializer(IssueListSerializer):
             "discovered_stage_record", "resolved_by", "resolved_by_name",
             "verified_by", "verified_by_name", "verified_at", "closed_at",
             "investigation_notes", "reassignments", "attachments",
-            "known_issue_detail", "participants", "allowed_transitions")
+            "known_issue_detail", "participants", "allowed_transitions",
+            "reporter", "reporter_name", "occurred_at_approx", "location_context",
+            "reproduction_notes", "acknowledged_by", "parent_summary", "events",
+            "handoffs", "unit_links")
+        # Discovery facts and routing state change only through services.
+        read_only_fields = ("fc", "discovered_stage", "discovered_stage_record",
+                            "discovering_department", "discovered_by", "reporter",
+                            "submitted_at", "queue", "accountable_user",
+                            "acknowledged_at", "acknowledged_by", "blocks_stage",
+                            "kind", "parent")
+
+    def get_parent_summary(self, obj):
+        """Seeing a workstream shows its incident's headline, never the
+        incident's notes or its sibling workstreams."""
+        if obj.parent_id is None:
+            return None
+        p = obj.parent
+        return {"id": p.pk, "key": p.key, "title": p.title, "status": p.status,
+                "urgency": p.urgency}
 
     def get_known_issue_detail(self, obj):
         if obj.known_issue_id is None:
@@ -189,8 +251,38 @@ class IssueDetailSerializer(IssueListSerializer):
         return list(ISSUE_TRANSITIONS.get(obj.status, []))
 
 
+class ReportSerializer(serializers.Serializer):
+    """The quick report (WP4): three required fields, the rest optional."""
+    title = serializers.CharField(max_length=255)
+    symptom = serializers.CharField()
+    urgency = serializers.ChoiceField(choices=Urgency.choices)
+    impact = serializers.ChoiceField(choices=Impact.choices, required=False)
+    product_area = serializers.ChoiceField(choices=ProductArea.choices, required=False)
+    kind = serializers.ChoiceField(choices=IssueKind.choices, required=False,
+                                   default=IssueKind.STANDALONE)
+    parent = serializers.IntegerField(required=False, allow_null=True)
+    fc = serializers.IntegerField(required=False, allow_null=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    occurred_at_approx = serializers.CharField(required=False, allow_blank=True,
+                                               max_length=120)
+    location_context = serializers.CharField(required=False, allow_blank=True,
+                                             max_length=255)
+    reproduction_notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class HandoffProposeSerializer(serializers.Serializer):
+    to_department = serializers.IntegerField()
+    to_user = serializers.IntegerField(required=False, allow_null=True)
+    reason = serializers.CharField(allow_blank=True)
+
+
+class HandoffRespondSerializer(serializers.Serializer):
+    accept = serializers.BooleanField()
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
 class IssueCreateSerializer(serializers.Serializer):
-    fc = serializers.IntegerField()
+    fc = serializers.IntegerField(required=False, allow_null=True)
     title = serializers.CharField(max_length=255)
     symptoms = serializers.CharField()
     description = serializers.CharField(required=False, allow_blank=True, default="")

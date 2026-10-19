@@ -51,8 +51,12 @@ class NotificationSerializer(serializers.ModelSerializer):
         if issue is None:
             return NO_ACCESS
         if obj.kind == "HIGH_SEVERITY_ISSUE":
-            return (f"{issue.get_severity_display()} issue {issue.key} opened on "
-                    f"{issue.fc.serial}")
+            where = f" on {issue.fc.serial}" if issue.fc_id else ""
+            return f"{issue.get_severity_display()} issue {issue.key} opened{where}"
+        if obj.kind == "ISSUE_ALERT":
+            return f"{issue.get_urgency_display()} issue {issue.key} needs attention"
+        if obj.kind == "ALERT_FAILED":
+            return f"An alert about {issue.key} could not be delivered"
         if obj.kind == "ISSUE_STATUS":
             return f"{issue.key} is now {issue.get_status_display()}"
         return f"{issue.key}: {issue.title}"

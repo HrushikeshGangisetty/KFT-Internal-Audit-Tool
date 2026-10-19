@@ -62,7 +62,9 @@ export function when(value) {
   })
 }
 
-export const FcLink = ({ id, serial }) => <Link to={`/fcs/${id}`} className="mono">{serial}</Link>
+export const FcLink = ({ id, serial }) => (id
+  ? <Link to={`/fcs/${id}`} className="mono">{serial}</Link>
+  : <span className="muted">—</span>)
 export const IssueLink = ({ id, label }) => <Link to={`/issues/${id}`} className="mono">{label}</Link>
 
 export function Field({ label, children, hint }) {

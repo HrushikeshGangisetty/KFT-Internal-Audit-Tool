@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -145,6 +146,21 @@ class DashboardSummaryView(APIView):
             "avg_time_in_stage": avg_time_in_stage,
             "reworks_per_fc": list(rework_counts),
         })
+
+
+class WorkerHealthView(APIView):
+    """Worker heartbeat, dead jobs and failed alerts (WP3), for account
+    administrators and managers. Counts only; no record content."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from accounts.models import Capability
+        user = request.user
+        if not (policy.has_capability(user, Capability.IS_MANAGER)
+                or policy.has_capability(user, Capability.CAN_ADMINISTER_ACCOUNTS)):
+            raise PermissionDenied("Managers and administrators only.")
+        from . import jobs
+        return Response(jobs.worker_health())
 
 
 class HealthView(APIView):

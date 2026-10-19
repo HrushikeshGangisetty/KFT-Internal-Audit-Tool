@@ -50,20 +50,32 @@ def is_head_or_manager(user):
 
 # --- issues ------------------------------------------------------------------
 def visible_issues(user):
-    from issues.models import Issue, IssueParticipant
+    from issues.models import Handoff, Issue, IssueParticipant
 
     qs = Issue.objects.all()
     if not getattr(user, "is_authenticated", False):
         return qs.none()
     if is_head_or_manager(user):
         return qs
+    departments = active_department_ids(user)
     participating = IssueParticipant.objects.filter(
         user=user, removed_at__isnull=True).values("issue_id")
-    # Handoff recipients join this union in WP5.
-    return qs.filter(Q(assigned_department_id__in=active_department_ids(user))
-                     | Q(discovered_by=user)
-                     | Q(assigned_person=user)
-                     | Q(pk__in=participating))
+    # A pending handoff lets the named recipient and the receiving queue's
+    # head and backup read the issue before they accept (WP5).
+    receiving = Handoff.objects.filter(
+        Q(to_user=user) | Q(to_department__queue__head=user)
+        | Q(to_department__queue__backup=user),
+        status=Handoff.PENDING).values("issue_id")
+    scope = (Q(assigned_department_id__in=departments)
+             | Q(discovered_by=user) | Q(reporter=user)
+             | Q(assigned_person=user) | Q(accountable_user=user)
+             | Q(queue__head=user) | Q(queue__backup=user)
+             | Q(pk__in=participating) | Q(pk__in=receiving))
+    if settings.HANDOFF_PREVIOUS_TEAM_ACCESS == "read":
+        scope |= Q(pk__in=Handoff.objects.filter(
+            status=Handoff.ACCEPTED,
+            from_department_id__in=departments).values("issue_id"))
+    return qs.filter(scope)
 
 
 def can_view_issue(user, issue):

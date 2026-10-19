@@ -4,9 +4,11 @@ from rest_framework import status as http_status
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.parsers import FormParser, MultiPartParser
+from django.db.models import Q
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from access import policy
 from access.mixins import ScopedViewSetMixin
@@ -18,21 +20,25 @@ from core.models import AuditLogEntry
 from fc.models import StageRecord
 
 from . import services
-from .models import (Category, Issue, IssueAttachment, IssueStatus, KnownIssue,
-                     Severity)
+from .models import (Category, Handoff, Impact, Issue, IssueAttachment, IssueKind,
+                     IssueStatus, KnownIssue, ProductArea, Severity, Urgency)
 from .search import find_similar, search_issues, search_known_issues
-from .serializers import (InvestigationNoteSerializer, IssueAttachmentSerializer,
-                          IssueCreateSerializer, IssueDetailSerializer,
-                          IssueListSerializer, KnownIssueSerializer,
-                          ParticipantAddSerializer, ReassignSerializer, SimilarQuerySerializer,
-                          StatusChangeSerializer)
+from .serializers import (HandoffProposeSerializer, HandoffRespondSerializer,
+                          HandoffSerializer, InvestigationNoteSerializer,
+                          IssueAttachmentSerializer, IssueCreateSerializer,
+                          IssueDetailSerializer, IssueListSerializer,
+                          KnownIssueSerializer, ParticipantAddSerializer,
+                          ReassignSerializer, ReportSerializer,
+                          SimilarQuerySerializer, StatusChangeSerializer)
 
 
 class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [CanWriteIssues]
     filterset_fields = ("fc", "status", "severity", "category", "discovered_stage",
                         "assigned_department", "discovering_department",
-                        "assigned_person", "known_issue", "is_recurring")
+                        "assigned_person", "known_issue", "is_recurring",
+                        "product_area", "urgency", "kind", "parent", "queue",
+                        "accountable_user")
     ordering_fields = ("created_at", "updated_at", "severity")
 
     def get_serializer_class(self):
@@ -45,7 +51,8 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     def get_scoped_queryset(self):
         return policy.visible_issues(self.request.user).select_related(
             "fc", "discovered_by", "discovering_department", "assigned_department",
-            "assigned_person", "root_cause_department", "known_issue")
+            "assigned_person", "root_cause_department", "known_issue", "queue",
+            "accountable_user", "reporter", "parent")
 
     def get_queryset(self):
         # Scope first, then search: a hidden match can neither take a ranked
@@ -65,9 +72,10 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
         s = IssueCreateSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         data = s.validated_data
-        fc = get_object_or_404(policy.visible_fcs(request.user), pk=data["fc"])
+        fc = (get_object_or_404(policy.visible_fcs(request.user), pk=data["fc"])
+              if data.get("fc") else None)
         stage_record = None
-        if data.get("discovered_stage_record"):
+        if fc and data.get("discovered_stage_record"):
             stage_record = StageRecord.objects.filter(
                 pk=data["discovered_stage_record"], fc=fc).first()
         issue = services.create_issue(
@@ -100,18 +108,101 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
         if issue.status == IssueStatus.CLOSED and not request.user.is_admin_role:
             raise WorkflowError("Closed issues are read-only (admin correction only).",
                                 code="issue_closed")
-        before = audit.snapshot(issue)
-        response = super().update(request, *args, **kwargs)
-        issue.refresh_from_db()
-        from .search import reindex_issue
-        reindex_issue(issue)
-        audit.record_change(issue, AuditLogEntry.ACTION_UPDATE, before,
-                            note="Issue edited", actor=request.user)
-        return response
+        # Refuse, rather than silently drop, attempts to rewrite discovery
+        # facts or routing state (WP4).
+        refused = sorted(set(request.data) & set(
+            services.IMMUTABLE_FIELDS + services.SERVICE_OWNED_FIELDS))
+        if refused:
+            raise WorkflowError(f"These fields cannot be edited: {', '.join(refused)}.",
+                                code="immutable_field")
+        s = IssueDetailSerializer(issue, data=request.data, partial=True,
+                                  context=self.get_serializer_context())
+        s.is_valid(raise_exception=True)
+        issue = services.edit_issue(issue, actor=request.user,
+                                    changes=s.validated_data)
+        return Response(IssueDetailSerializer(
+            issue, context=self.get_serializer_context()).data)
 
     def destroy(self, request, *args, **kwargs):
         return Response({"detail": "Issues are never deleted; close them instead."},
                         status=http_status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    # --- WP4/WP5: report, routing, acknowledgement, handoffs --------------
+    @action(detail=False, methods=["post"],
+            parser_classes=[JSONParser, MultiPartParser, FormParser])
+    def report(self, request):
+        """Scenario 1: returns the ID and the queue. Attachment failures are
+        listed but never fail the report."""
+        s = ReportSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        d = dict(s.validated_data)
+        user = request.user
+        fc_id, parent_id = d.pop("fc", None), d.pop("parent", None)
+        issue = services.submit_report(
+            reporter=user, title=d.pop("title"), symptom=d.pop("symptom"),
+            urgency=d.pop("urgency"),
+            fc=get_object_or_404(policy.visible_fcs(user), pk=fc_id) if fc_id else None,
+            parent=get_object_or_404(policy.visible_issues(user), pk=parent_id)
+            if parent_id else None, **d)
+        failed = []
+        for upload in request.FILES.getlist("files"):
+            try:
+                services.add_attachment(issue, upload=upload, actor=user)
+            except Exception as exc:  # noqa: BLE001 - reported per file
+                failed.append({"name": upload.name,
+                               "error": getattr(exc, "message", str(exc))})
+        data = IssueDetailSerializer(issue, context=self.get_serializer_context()).data
+        return Response({**data, "failed_attachments": failed},
+                        status=http_status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def acknowledge(self, request, pk=None):
+        issue = services.acknowledge(self.get_object(), user=request.user)
+        return Response(IssueDetailSerializer(
+            issue, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="accept-ownership")
+    def accept_ownership(self, request, pk=None):
+        member = get_object_or_404(User, pk=request.data.get("member") or request.user.pk,
+                                   is_active=True)
+        issue = services.accept_ownership(self.get_object(), actor=request.user,
+                                          member=member)
+        return Response(IssueDetailSerializer(
+            issue, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"])
+    def handoffs(self, request, pk=None):
+        issue = self.get_object()
+        s = HandoffProposeSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        d = s.validated_data
+        handoff = services.propose_handoff(
+            issue, actor=request.user,
+            to_department=get_object_or_404(Department, pk=d["to_department"]),
+            to_user=get_object_or_404(User, pk=d["to_user"], is_active=True)
+            if d.get("to_user") else None,
+            reason=d["reason"])
+        return Response(HandoffSerializer(handoff).data,
+                        status=http_status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="units")
+    def link_unit(self, request, pk=None):
+        issue = self.get_object()
+        fc = get_object_or_404(policy.visible_fcs(request.user), pk=request.data.get("fc"))
+        services.link_unit(issue, fc=fc, actor=request.user,
+                           reason=request.data.get("reason", ""))
+        return Response(IssueDetailSerializer(
+            issue, context=self.get_serializer_context()).data,
+            status=http_status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="blocks-stage")
+    def blocks_stage(self, request, pk=None):
+        issue = services.set_blocks_stage(
+            self.get_object(), actor=request.user,
+            blocks=bool(request.data.get("blocks")),
+            reason=request.data.get("reason", ""))
+        return Response(IssueDetailSerializer(
+            issue, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"])
     def notes(self, request, pk=None):
@@ -270,6 +361,53 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
             "statuses": [{"value": v, "label": l} for v, l in IssueStatus.choices],
             "severities": [{"value": v, "label": l} for v, l in Severity.choices],
             "categories": [{"value": v, "label": l} for v, l in Category.choices],
+            "product_areas": [{"value": v, "label": l} for v, l in ProductArea.choices],
+            "impacts": [{"value": v, "label": l} for v, l in Impact.choices],
+            "urgencies": [{"value": v, "label": l} for v, l in Urgency.choices],
+            "kinds": [{"value": v, "label": l} for v, l in IssueKind.choices],
+        })
+
+
+class HandoffViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
+    """Handoffs on issues the reader can see; responding is a service call."""
+    serializer_class = HandoffSerializer
+    filterset_fields = ("issue", "status")
+
+    def get_scoped_queryset(self):
+        return Handoff.objects.filter(
+            issue__in=policy.visible_issues(self.request.user)).select_related(
+            "issue", "to_department")
+
+    @action(detail=True, methods=["post"])
+    def respond(self, request, pk=None):
+        s = HandoffRespondSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        handoff = services.respond_handoff(
+            self.get_object(), actor=request.user, accept=s.validated_data["accept"],
+            reason=s.validated_data["reason"])
+        return Response(HandoffSerializer(handoff).data)
+
+
+class MyQueueView(APIView):
+    """What I am accountable for, what awaits my acknowledgement, and the
+    handoffs awaiting my response. Built from access.policy scopes."""
+
+    def get(self, request):
+        user = request.user
+        issues = policy.visible_issues(user).exclude(status=IssueStatus.CLOSED)
+        mine = issues.filter(accountable_user=user)
+        awaiting = issues.filter(acknowledged_at__isnull=True).filter(
+            Q(accountable_user=user) | Q(queue__head=user) | Q(queue__backup=user))
+        handoffs = [h for h in Handoff.objects.filter(
+            status=Handoff.PENDING, issue__in=policy.visible_issues(user))
+            .select_related("issue", "to_department")
+            if services.can_respond(h, user)]
+        ctx = {"request": request}
+        return Response({
+            "accountable": IssueListSerializer(mine, many=True, context=ctx).data,
+            "awaiting_acknowledgement": IssueListSerializer(awaiting, many=True,
+                                                            context=ctx).data,
+            "handoffs_awaiting_response": HandoffSerializer(handoffs, many=True).data,
         })
 
 

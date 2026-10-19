@@ -5,7 +5,8 @@ from rest_framework.routers import DefaultRouter
 from accounts.views import (CsrfView, DepartmentViewSet, LoginView, LogoutView,
                             MeView, UserViewSet)
 from core.views import (AuditLogViewSet, DashboardSummaryView, HealthView,
-                        NotificationViewSet, spa_index)
+                        NotificationViewSet, WorkerHealthView,
+                        spa_index)
 from fc.views import (ChecklistItemViewSet, ChecklistTemplateViewSet,
                       FCModelTypeViewSet, FirmwareBuildViewSet,
                       FirmwareRecordViewSet, FlightControllerViewSet,
@@ -13,7 +14,8 @@ from fc.views import (ChecklistItemViewSet, ChecklistTemplateViewSet,
                       ReworkRecordViewSet, SoftwareUpdateViewSet,
                       SoftwareVersionViewSet, StageRecordViewSet,
                       TestResultViewSet)
-from issues.views import (IssueAttachmentViewSet, IssueViewSet, KnownIssueViewSet)
+from issues.views import (HandoffViewSet, IssueAttachmentViewSet, IssueViewSet,
+                          KnownIssueViewSet, MyQueueView)
 
 router = DefaultRouter()
 router.register("departments", DepartmentViewSet, basename="department")
@@ -33,6 +35,7 @@ router.register("test-results", TestResultViewSet, basename="testresult")
 router.register("issues", IssueViewSet, basename="issue")
 router.register("known-issues", KnownIssueViewSet, basename="knownissue")
 router.register("issue-attachments", IssueAttachmentViewSet, basename="issueattachment")
+router.register("handoffs", HandoffViewSet, basename="handoff")
 router.register("audit-log", AuditLogViewSet, basename="auditlogentry")
 router.register("notifications", NotificationViewSet, basename="notification")
 router.register("lifecycle", LifecycleMetaView, basename="lifecycle")
@@ -40,11 +43,13 @@ router.register("lifecycle", LifecycleMetaView, basename="lifecycle")
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health/", HealthView.as_view()),
+    path("api/admin/health/", WorkerHealthView.as_view()),
     path("api/auth/csrf/", CsrfView.as_view()),
     path("api/auth/login/", LoginView.as_view()),
     path("api/auth/logout/", LogoutView.as_view()),
     path("api/auth/me/", MeView.as_view()),
     path("api/dashboard/summary/", DashboardSummaryView.as_view()),
+    path("api/me/queue/", MyQueueView.as_view()),
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls")),
     # Everything else is a frontend route: serve the SPA so deep links load.
