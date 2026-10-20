@@ -489,10 +489,12 @@ Unaccepted handoffs use the normal policy, measured from `proposed_at`, escalati
 - `Issue.customer` and `Issue.deployment` are nullable and settable after submission.
 - Access: customer and deployment summaries follow FC visibility. Contacts follow the capability only.
 
+**Implemented:** 20 October 2026; see `docs/worklog/WP9.md` for scope, evidence and limitations. Direct commit on main authorised by the user.
+
 **Acceptance**
 
-- [ ] An issue linked to a customer never includes contact fields for a user without the capability, through the issue detail, search, or any nested response.
-- [ ] Sharing an issue cross-team does not expose contacts.
+- [x] An issue linked to a customer never includes contact fields for a user without the capability, through the issue detail, search, or any nested response.
+- [x] Sharing an issue cross-team does not expose contacts.
 
 ---
 

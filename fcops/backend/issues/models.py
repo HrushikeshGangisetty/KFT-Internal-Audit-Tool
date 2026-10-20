@@ -175,6 +175,11 @@ class Issue(TimeStampedModel):
                                  related_name="reported_issues")
     submitted_at = models.DateTimeField(default=timezone.now)
 
+    customer = models.ForeignKey("customers.Customer", null=True, blank=True,
+                                 on_delete=models.PROTECT, related_name="issues")
+    deployment = models.ForeignKey("customers.Deployment", null=True, blank=True,
+                                   on_delete=models.PROTECT, related_name="issues")
+
     # --- report context (WP4) ---
     product_area = models.CharField(max_length=16, choices=ProductArea.choices,
                                     default=ProductArea.UNKNOWN, db_index=True)

@@ -18,7 +18,12 @@ from fc.views import (ChecklistItemViewSet, ChecklistTemplateViewSet,
 from issues.views import (HandoffViewSet, IssueAttachmentViewSet, IssueViewSet,
                           KnownIssueViewSet, MyQueueView)
 
+from customers.views import CustomerViewSet, ContactViewSet, DeploymentViewSet
+
 router = DefaultRouter()
+router.register("customers", CustomerViewSet, basename="customer")
+router.register("customer-contacts", ContactViewSet, basename="customercontact")
+router.register("deployments", DeploymentViewSet, basename="deployment")
 router.register("departments", DepartmentViewSet, basename="department")
 router.register("users", UserViewSet, basename="user")
 router.register("fc-models", FCModelTypeViewSet, basename="fcmodeltype")

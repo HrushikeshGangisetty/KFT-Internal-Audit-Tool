@@ -13,6 +13,16 @@ class AuditLogEntrySerializer(serializers.ModelSerializer):
                   "actor_name", "action", "before", "after", "note", "fc",
                   "fc_serial", "created_at")
 
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        from access import policy
+        if obj.entity_type == "Issue" and not policy.can_view_fcs(self.context["request"].user):
+            for key in ("before", "after"):
+                if isinstance(data[key], dict):
+                    data[key] = {k: v for k, v in data[key].items()
+                                 if k not in ("customer", "deployment")}
+        return data
+
     def get_actor_name(self, obj):
         return (obj.actor.full_name if obj.actor and obj.actor.full_name
                 else obj.actor_label)

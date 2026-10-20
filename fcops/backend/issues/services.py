@@ -457,6 +457,11 @@ def edit_issue(issue, *, actor, changes):
     if refused:
         raise WorkflowError(f"These fields cannot be edited: {', '.join(refused)}.",
                             code="immutable_field")
+    if {"customer", "deployment"} & changes.keys():
+        issue = Issue.objects.select_for_update().get(pk=issue.pk)
+        from customers.services import validate_issue_context
+        validate_issue_context(actor, changes.get("customer", issue.customer),
+                               changes.get("deployment", issue.deployment))
     before = audit.snapshot(issue)
     for field, value in changes.items():
         setattr(issue, field, value)

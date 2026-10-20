@@ -128,6 +128,30 @@ def visible_stage_records(user):
     return scope_by_fc(user, StageRecord.objects.all())
 
 
+# --- customers (WP9) ---------------------------------------------------------
+def visible_customers(user):
+    from customers.models import Customer
+    return scope_by_fc(user, Customer.objects.all())
+
+
+def visible_deployments(user):
+    from customers.models import Deployment
+    return scope_by_fc(user, Deployment.objects.all())
+
+
+def visible_customer_contacts(user):
+    from customers.models import CustomerContact
+    qs = CustomerContact.objects.all()
+    return qs if has_capability(user, Capability.CAN_VIEW_CUSTOMER_CONTACTS) else qs.none()
+
+
+def contact_customers(user):
+    # A contact grant is independent of engineering-summary access.
+    from customers.models import Customer
+    qs = Customer.objects.all()
+    return qs if has_capability(user, Capability.CAN_VIEW_CUSTOMER_CONTACTS) else qs.none()
+
+
 # --- notifications and audit ------------------------------------------------
 def visible_notifications(user):
     from core.models import Notification
@@ -150,6 +174,11 @@ def visible_audit_entries(user):
     qs = AuditLogEntry.objects.all()
     if not getattr(user, "is_authenticated", False):
         return qs.none()
+    # Contact snapshots contain restricted fields, including historical values.
+    if not has_capability(user, Capability.CAN_VIEW_CUSTOMER_CONTACTS):
+        qs = qs.exclude(entity_type="CustomerContact")
+    if not can_view_fcs(user):
+        qs = qs.exclude(entity_type__in=("Customer", "Deployment"))
     if has_capability(user, Capability.IS_MANAGER):
         return qs
 

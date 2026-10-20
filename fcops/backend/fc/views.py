@@ -280,7 +280,7 @@ class FlightControllerViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
             Q(fc=fc) | Q(pk__in=linked)).select_related(
             "assigned_department", "discovering_department", "assigned_person",
             "discovered_by")
-        return Response(IssueListSerializer(qs, many=True).data)
+        return Response(IssueListSerializer(qs, many=True, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["get"])
     def audit_log(self, request, pk=None):
@@ -288,7 +288,7 @@ class FlightControllerViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
         fc = self.get_object()
         qs = (policy.visible_audit_entries(request.user).filter(fc=fc)
               .select_related("actor")[:500])
-        return Response(AuditLogEntrySerializer(qs, many=True).data)
+        return Response(AuditLogEntrySerializer(qs, many=True, context=self.get_serializer_context()).data)
 
 
 class StageRecordViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):

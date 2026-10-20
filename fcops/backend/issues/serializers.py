@@ -114,6 +114,17 @@ class KnownIssueSerializer(serializers.ModelSerializer):
 
 
 class IssueListSerializer(serializers.ModelSerializer):
+    customer = ScopedPrimaryKeyRelatedField(policy.visible_customers, required=False, allow_null=True)
+    deployment = ScopedPrimaryKeyRelatedField(policy.visible_deployments, required=False, allow_null=True)
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        user = self.context["request"].user
+        if not policy.can_view_fcs(user):
+            data["customer"] = None
+            data["deployment"] = None
+        return data
+
     fc_serial = serializers.CharField(source="fc.serial", read_only=True, default="")
     queue_name = serializers.CharField(source="queue.name", read_only=True, default="")
     accountable_user_name = serializers.CharField(
@@ -139,7 +150,7 @@ class IssueListSerializer(serializers.ModelSerializer):
                   "created_at", "updated_at", "resolved_at", "rank",
                   "product_area", "urgency", "impact", "kind", "parent",
                   "blocks_stage", "queue", "queue_name", "accountable_user",
-                  "accountable_user_name", "acknowledged_at", "submitted_at")
+                  "accountable_user_name", "acknowledged_at", "submitted_at", "customer", "deployment")
 
     def get_stage_label(self, obj):
         return Stage(obj.discovered_stage).label if obj.discovered_stage else ""

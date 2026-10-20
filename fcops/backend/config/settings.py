@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "fc",
     "issues",
     "access",
+    "customers",
 ]
 
 MIDDLEWARE = [

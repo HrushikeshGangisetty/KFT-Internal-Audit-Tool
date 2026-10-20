@@ -394,7 +394,7 @@ class IssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
         qs = search_issues(self.get_scoped_queryset(), text=params.get("q"),
                            filters={k: params.get(k) for k in params.keys()})
         page = self.paginate_queryset(qs)
-        data = IssueListSerializer(page if page is not None else qs, many=True).data
+        data = IssueListSerializer(page if page is not None else qs, many=True, context=self.get_serializer_context()).data
         return self.get_paginated_response(data) if page is not None else Response(data)
 
     @action(detail=False, methods=["get"])
@@ -486,7 +486,7 @@ class KnownIssueViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     def occurrences(self, request, pk=None):
         known = self.get_object()
         qs = policy.visible_issues(request.user).filter(known_issue=known)
-        return Response(IssueListSerializer(qs, many=True).data)
+        return Response(IssueListSerializer(qs, many=True, context=self.get_serializer_context()).data)
 
 
 class IssueAttachmentViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
