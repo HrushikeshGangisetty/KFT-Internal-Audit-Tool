@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
 import {
-  Banner, Card, Empty, FcLink, Icon, IssueLink, Loading, PageHeader, SeverityTag, StatusTag, Tag, when,
+  Banner, Card, Empty, FcLink, Icon, IssueLink, Loading, OwnerTag, PageHeader, SeverityTag, StatusTag, Tag,
+  UrgencyTag, when,
 } from '../components/ui.jsx'
 
 export default function IssueList() {
@@ -39,7 +40,7 @@ export default function IssueList() {
       <PageHeader
         title="Issues"
         subtitle="Problems raised across production, testing and the field."
-        actions={<Link className="btn" to="/issues/new"><Icon name="plus" />Report an issue</Link>}
+        actions={<Link className="btn" to="/report"><Icon name="plus" />Report a problem</Link>}
       />
 
       <Card className="filter-bar">
@@ -89,14 +90,14 @@ export default function IssueList() {
 
       <Banner>{error}</Banner>
       <Card flush>
-        {rows === null ? <Loading what="issues" cols={8} /> : null}
+        {rows === null ? <Loading what="issues" cols={10} /> : null}
         {rows?.length === 0 ? <Empty>No issues match these filters.</Empty> : null}
         {rows?.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr><th>Key</th><th>FC</th><th>Title</th><th>Discovered</th>
-                  <th>Assigned</th><th>Severity</th><th>Status</th><th>Opened</th></tr>
+                  <th>Assigned</th><th>Urgency</th><th>Owner</th><th>Severity</th><th>Status</th><th>Opened</th></tr>
               </thead>
               <tbody>
                 {rows.map((i) => (
@@ -111,6 +112,8 @@ export default function IssueList() {
                       <span className="muted">{i.discovering_department_name}</span></td>
                     <td className="small">{i.assigned_department_name || '—'}<br />
                       <span className="muted">{i.assigned_person_name}</span></td>
+                    <td><UrgencyTag value={i.urgency} /></td>
+                    <td><OwnerTag name={i.accountable_user_name} /></td>
                     <td><SeverityTag value={i.severity} /></td>
                     <td><StatusTag value={i.status} /></td>
                     <td className="small muted">{when(i.created_at)}</td>

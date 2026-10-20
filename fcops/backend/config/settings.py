@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "issues",
     "access",
     "customers",
+    "tasks",
 ]
 
 MIDDLEWARE = [
@@ -219,6 +220,11 @@ WAITING_MAX_DAYS = int(env("WAITING_MAX_DAYS", "14"))
 # PLACEHOLDER: who may reopen a resolved, verified or closed issue.
 REOPEN_ALLOWED = [r for r in env(
     "REOPEN_ALLOWED", "accountable,queue_head,any_head,manager").split(",") if r]
+
+# --- Tasks and daily progress (WP10) ---------------------------------------
+# PLACEHOLDER until the PRD decision (§3): ordinary teammates do not see each
+# other's tasks unless this is enabled.
+TASKS_TEAMMATES_VISIBLE = env_bool("TASKS_TEAMMATES_VISIBLE", False)
 
 LOGGING = {
     "version": 1,

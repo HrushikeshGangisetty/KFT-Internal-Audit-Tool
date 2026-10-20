@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
 import { Banner, Card, Empty, FcLink, Icon, Loading, PageHeader, StatusTag, when } from '../components/ui.jsx'
 
 export default function FcList() {
   const [rows, setRows] = useState(null)
   const [meta, setMeta] = useState({ stages: [] })
-  const [filters, setFilters] = useState({ search: '', status: '', current_stage: '' })
+  const [params] = useSearchParams()
+  const [filters, setFilters] = useState({
+    search: params.get('search') || '', status: '', current_stage: params.get('current_stage') || '',
+  })
   const [error, setError] = useState('')
 
   useEffect(() => { api('/api/lifecycle/').then(setMeta).catch(() => {}) }, [])

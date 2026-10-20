@@ -453,6 +453,42 @@ dl.kv dt { color: var(--muted); }
 dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
 /* =========================================================================
+   Home and queues (WP10)
+   ========================================================================= */
+.quick-actions { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+.btn.primary-action, button.primary-action { height: 44px; padding: 0 20px; font-size: 14.5px; }
+.quick-find { display: flex; gap: var(--space-2); flex: 1 1 260px; max-width: 420px; }
+.quick-find input { height: 44px; }
+.quick-find button { height: 44px; width: 44px; padding: 0; flex: none; }
+
+.qlist { list-style: none; margin: 0; padding: 0; }
+.qrow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--space-3);
+  padding: 10px 0; border-bottom: 1px solid var(--gray-100); min-height: 44px;
+}
+.qrow:last-child { border-bottom: none; }
+.qrow-main { display: flex; gap: var(--space-2); align-items: baseline; flex: 1 1 260px; min-width: 0; flex-wrap: wrap; }
+.qrow-title { min-width: 0; overflow-wrap: anywhere; }
+.qrow-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.qrow-action { display: flex; gap: var(--space-2); align-items: center; margin-left: auto; }
+.qrow-action select { width: auto; }
+.card-body.flush > .qlist { padding: 0 var(--space-5); }
+
+.stage-strip a.stage-chip:hover { text-decoration: none; border-color: var(--accent); }
+.stage-chip strong { font-variant-numeric: tabular-nums; }
+
+/* report form: large, thumb-friendly urgency choice */
+fieldset.choice-group { border: none; padding: 0; margin: 0 0 var(--space-4); display: flex; gap: var(--space-2); flex-wrap: wrap; }
+fieldset.choice-group legend { font-size: 12.5px; font-weight: 550; color: var(--gray-700); margin-bottom: 6px; padding: 0; }
+label.choice {
+  display: inline-flex; align-items: center; gap: 8px; margin: 0; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 14px; font-weight: 500; color: var(--text); background: var(--surface);
+}
+label.choice.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.report-form { max-width: 720px; }
+
+/* =========================================================================
    Login
    ========================================================================= */
 .login-wrap {
@@ -481,11 +517,26 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
   .brand { padding: 0 8px 0 0; }
   .brand-name { display: none; }
   .sidebar nav { flex-direction: row; gap: 2px; }
-  .sidebar nav a { white-space: nowrap; }
+  .nav-group { display: contents; }
+  .sidebar nav a { white-space: nowrap; min-height: 44px; }
   .who, .sidebar .spacer, .nav-section { display: none; }
   .topbar { padding: 0 var(--space-4); }
   .topbar-title { display: none; }
   .content { padding: var(--space-4); }
+}
+
+/* Phones: one column, touch targets of at least 44px (WP10). */
+@media (max-width: 600px) {
+  button, .btn, input, select { min-height: 44px; }
+  button.link { min-height: 44px; }
+  .icon-btn { width: 44px; height: 44px; }
+  .tabs button { height: 44px; }
+  .grid.cols-2, .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
+  .quick-actions > .btn { flex: 1 1 100%; }
+  .quick-find { max-width: none; flex-basis: 100%; }
+  .qrow-action { margin-left: 0; width: 100%; }
+  .qrow-action button { flex: 1; }
+  .page-header h1 { font-size: 20px; }
 }
 
 .mobile-only { display: none; }

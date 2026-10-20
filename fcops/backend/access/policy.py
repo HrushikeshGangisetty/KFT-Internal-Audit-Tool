@@ -152,6 +152,37 @@ def contact_customers(user):
     return qs if has_capability(user, Capability.CAN_VIEW_CUSTOMER_CONTACTS) else qs.none()
 
 
+# --- tasks and daily progress (WP10) -----------------------------------------
+def visible_tasks(user):
+    """Own and collaborative tasks; every head and the manager see all.
+    Teammates see each other's tasks only when TASKS_TEAMMATES_VISIBLE
+    (PLACEHOLDER until the PRD decision)."""
+    from tasks.models import Task, TaskCollaborator
+
+    qs = Task.objects.all()
+    if not getattr(user, "is_authenticated", False):
+        return qs.none()
+    if is_head_or_manager(user):
+        return qs
+    collaborating = TaskCollaborator.objects.filter(user=user).values("task_id")
+    scope = Q(accountable_user=user) | Q(pk__in=collaborating)
+    if settings.TASKS_TEAMMATES_VISIBLE:
+        scope |= Q(department_id__in=active_department_ids(user))
+    return qs.filter(scope)
+
+
+def visible_daily_updates(user):
+    """Your own updates and updates on tasks you can see."""
+    from tasks.models import DailyUpdate
+
+    qs = DailyUpdate.objects.all()
+    if not getattr(user, "is_authenticated", False):
+        return qs.none()
+    if is_head_or_manager(user):
+        return qs
+    return qs.filter(Q(author=user) | Q(task__in=visible_tasks(user)))
+
+
 # --- notifications and audit ------------------------------------------------
 def visible_notifications(user):
     from core.models import Notification
@@ -187,10 +218,11 @@ def visible_audit_entries(user):
 
     allowed = (Q(entity_type="Issue", entity_id__in=ids(visible_issues(user)))
                | Q(entity_type="KnownIssue",
-                   entity_id__in=ids(visible_knowledge(user))))
+                   entity_id__in=ids(visible_knowledge(user)))
+               | Q(entity_type="Task", entity_id__in=ids(visible_tasks(user))))
     if has_capability(user, Capability.CAN_ADMINISTER_ACCOUNTS):
         allowed |= Q(entity_type__in=ACCOUNT_ENTITY_TYPES)
-    other = ~Q(entity_type__in=("Issue", "KnownIssue") + ACCOUNT_ENTITY_TYPES)
+    other = ~Q(entity_type__in=("Issue", "KnownIssue", "Task") + ACCOUNT_ENTITY_TYPES)
     if can_view_fcs(user):
         allowed |= other
     else:

@@ -19,11 +19,14 @@ from issues.views import (HandoffViewSet, IssueAttachmentViewSet, IssueViewSet,
                           KnownIssueViewSet, MyQueueView)
 
 from customers.views import CustomerViewSet, ContactViewSet, DeploymentViewSet
+from tasks.views import DailyUpdateViewSet, ProgressView, TaskViewSet
 
 router = DefaultRouter()
 router.register("customers", CustomerViewSet, basename="customer")
 router.register("customer-contacts", ContactViewSet, basename="customercontact")
 router.register("deployments", DeploymentViewSet, basename="deployment")
+router.register("tasks", TaskViewSet, basename="task")
+router.register("daily-updates", DailyUpdateViewSet, basename="dailyupdate")
 router.register("departments", DepartmentViewSet, basename="department")
 router.register("users", UserViewSet, basename="user")
 router.register("fc-models", FCModelTypeViewSet, basename="fcmodeltype")
@@ -60,6 +63,7 @@ urlpatterns = [
     path("api/auth/me/", MeView.as_view()),
     path("api/dashboard/summary/", DashboardSummaryView.as_view()),
     path("api/me/queue/", MyQueueView.as_view()),
+    path("api/progress/", ProgressView.as_view()),
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls")),
     # Everything else is a frontend route: serve the SPA so deep links load.

@@ -1,4 +1,6 @@
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { api } from '../lib/api'
 
 /* ---------------------------------------------------------------------------
    Icons — a small inline set (24×24, stroke). Add paths here, not new deps.
@@ -22,6 +24,9 @@ const ICONS = {
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z',
   info: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01',
   check: 'M22 11.1V12a10 10 0 1 1-5.9-9.1M22 4 12 14l-3-3',
+  home: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
+  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+  tasks: 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9',
 }
 
 export function Icon({ name, size = 16, ...rest }) {
@@ -220,6 +225,36 @@ export function Loading({ what = 'data', variant = 'table', rows, cols }) {
 }
 
 /* ---------------------------------------------------------------------------
+   Independent panels: each loads on its own, so one failure never blanks
+   the page. `path` null skips the request (e.g. a panel the role lacks).
+   ------------------------------------------------------------------------- */
+export function usePanel(path) {
+  const [state, setState] = useState({ data: null, error: '' })
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (!path) return undefined
+    let alive = true
+    setState({ data: null, error: '' })
+    api(path).then((data) => alive && setState({ data, error: '' }))
+      .catch((e) => alive && setState({ data: null, error: e.message }))
+    return () => { alive = false }
+  }, [path, tick])
+  const reload = useCallback(() => setTick((t) => t + 1), [])
+  return { ...state, reload }
+}
+
+/** Card that shows a skeleton while loading and its own error banner. */
+export function Panel({ panel, lines = 4, children, ...card }) {
+  return (
+    <Card {...card}>
+      {panel.error ? <Banner>Couldn't load this panel: {panel.error}</Banner>
+        : panel.data === null ? <div aria-busy="true"><SkeletonText lines={lines} /></div>
+          : children(panel.data)}
+    </Card>
+  )
+}
+
+/* ---------------------------------------------------------------------------
    Domain tags & formatters
    ------------------------------------------------------------------------- */
 const SEVERITY_TONE = { BLOCKER: 'bad', MAJOR: 'warn', MINOR: '', COSMETIC: '' }
@@ -239,7 +274,14 @@ const STATUS_TONE = {
   FAILED: 'bad',
   IN_PROGRESS: 'info',
   PENDING: '',
+  // task statuses (WP10)
+  planned: '',
+  in_progress: 'info',
+  blocked: 'bad',
+  done: 'ok',
+  cancelled: '',
 }
+const URGENCY_TONE = { urgent: 'bad', normal: '', unknown: '' }
 
 export const Tag = ({ children, tone = '' }) => (
   <span className={`tag ${tone}`}>{children}</span>
@@ -252,6 +294,41 @@ export const StatusTag = ({ value }) => (
 export const SeverityTag = ({ value }) => (
   <Tag tone={SEVERITY_TONE[value] ?? ''}>{humanize(value)}</Tag>
 )
+
+/* One treatment for urgency, owner and due state on Home, issue lists and FC
+   detail, so the same fact always looks the same. */
+export const UrgencyTag = ({ value }) => (value && value !== 'unknown'
+  ? <Tag tone={URGENCY_TONE[value] ?? ''}>{humanize(value)}</Tag>
+  : <Tag>Urgency unknown</Tag>)
+
+export const OwnerTag = ({ name }) => (name
+  ? <Tag>Owner: {name}</Tag>
+  : <Tag tone="warn">No owner yet</Tag>)
+
+/** Acknowledgement deadline (datetime) or task due date (YYYY-MM-DD). */
+export function DueTag({ at, date, overdue, label = 'Due' }) {
+  if (date) {
+    const today = new Date().toLocaleDateString('en-CA') // local YYYY-MM-DD
+    if (overdue ?? date < today) return <Tag tone="bad">Overdue · {date}</Tag>
+    if (date === today) return <Tag tone="warn">Due today</Tag>
+    return <Tag>{label} {date}</Tag>
+  }
+  if (!at) return null
+  const ms = new Date(at) - Date.now()
+  return ms < 0
+    ? <Tag tone="bad">{label} overdue by {span(-ms)}</Tag>
+    : <Tag tone="warn">{label} in {span(ms)}</Tag>
+}
+
+function span(ms) {
+  const m = Math.round(ms / 60000)
+  if (m < 60) return `${m}m`
+  const h = Math.round(m / 60)
+  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`
+}
+
+/** "3h ago" style age for list rows. */
+export const ago = (value) => (value ? `${span(Date.now() - new Date(value))} ago` : '—')
 
 export function humanize(value) {
   if (!value) return '—'

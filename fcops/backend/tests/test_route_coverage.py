@@ -12,6 +12,7 @@ from core.views import DashboardSummaryView, HealthView, WorkerHealthView
 from fc.views import LifecycleMetaView
 from issues.models import Issue
 from issues.views import MyQueueView
+from tasks.views import ProgressView
 
 ALLOWLIST = {
     CsrfView,                    # CSRF cookie/token, no records
@@ -25,6 +26,7 @@ ALLOWLIST = {
                                  # per-actor counts covered in test_access_matrix
     WorkerHealthView,            # job/alert counts only; managers and admins
     MyQueueView,                 # built from access.policy.visible_issues
+    ProgressView,                # heads/manager only; built from policy scopes
 }
 
 

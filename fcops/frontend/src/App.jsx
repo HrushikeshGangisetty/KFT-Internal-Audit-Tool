@@ -5,7 +5,10 @@ import { api, listOf } from './lib/api'
 import { Empty, Icon, PageSkeleton, SkeletonText, initials, when } from './components/ui.jsx'
 
 import Login from './pages/Login.jsx'
-import Dashboard from './pages/Dashboard.jsx'
+import Home from './pages/Home.jsx'
+import MyQueue from './pages/Queue.jsx'
+import Tasks from './pages/Tasks.jsx'
+import Report from './pages/Report.jsx'
 import FcList from './pages/FcList.jsx'
 import FcCreate from './pages/FcCreate.jsx'
 import FcDetail from './pages/FcDetail.jsx'
@@ -22,23 +25,34 @@ import FcModels from './pages/FcModels.jsx'
 import ParamCompare from './pages/ParamCompare.jsx'
 import AuditLog from './pages/AuditLog.jsx'
 
+// Grouped by purpose (WP10). `show` decides per item from /me permissions;
+// a group with no visible items is hidden. Backend scope still applies.
+const fcs = (p) => p.can_view_fcs
 const NAV = [
-  { to: '/', label: 'Dashboard', icon: 'dashboard', end: true },
-  { to: '/fcs', label: 'Flight Controllers', icon: 'chip' },
-  { to: '/issues', label: 'Issues', icon: 'alert' },
-  { to: '/search', label: 'Knowledge Search', icon: 'search' },
-  { to: '/known-issues', label: 'Known Issues', icon: 'book' },
-  { to: '/audit', label: 'Audit Log', icon: 'history' },
-  { to: '/param-compare', label: 'Parameter Compare', icon: 'compare' },
-  { section: 'Software', perm: 'can_push_software_update' },
-  { to: '/software/push-update', label: 'Push Update', icon: 'upload', perm: 'can_push_software_update' },
-  { section: 'Firmware', perm: 'can_manage_firmware' },
-  { to: '/firmware/builds', label: 'Manage Firmware', icon: 'cpu', perm: 'can_manage_firmware' },
-  { section: 'Manager', perm: 'can_configure_tests' },
-  { to: '/manager/test-configuration', label: 'Test Configuration', icon: 'sliders', perm: 'can_configure_tests' },
-  { to: '/manager/fc-models', label: 'FC Models', icon: 'layers', perm: 'can_configure_tests' },
-  { section: 'Administration', perm: 'is_admin' },
-  { to: '/admin', label: 'Admin', icon: 'shield', perm: 'is_admin' },
+  { section: 'Work', items: [
+    { to: '/', label: 'Home', icon: 'home', end: true },
+    { to: '/queue', label: 'My queue', icon: 'inbox' },
+    { to: '/issues', label: 'Issues', icon: 'alert' },
+    { to: '/tasks', label: 'Tasks', icon: 'tasks' },
+  ] },
+  { section: 'Hardware', items: [
+    { to: '/fcs', label: 'Flight controllers', icon: 'chip', show: fcs },
+    { to: '/param-compare', label: 'Test & evidence', icon: 'compare', show: fcs },
+    { to: '/firmware/builds', label: 'Firmware', icon: 'cpu', show: (p) => fcs(p) && p.can_manage_firmware },
+    { to: '/software/push-update', label: 'Software updates', icon: 'upload',
+      show: (p) => fcs(p) && p.can_push_software_update },
+  ] },
+  { section: 'Knowledge', items: [
+    { to: '/known-issues', label: 'Known issues', icon: 'book' },
+    { to: '/search', label: 'Search', icon: 'search' },
+    { to: '/audit', label: 'Activity log', icon: 'history' },
+  ] },
+  { section: 'Admin', items: [
+    { to: '/manager/test-configuration', label: 'Test configuration', icon: 'sliders',
+      show: (p) => p.can_configure_tests },
+    { to: '/manager/fc-models', label: 'FC models', icon: 'layers', show: (p) => p.can_configure_tests },
+    { to: '/admin', label: 'Accounts', icon: 'shield', show: (p) => p.is_admin },
+  ] },
 ]
 
 function Shell({ children }) {
@@ -70,15 +84,19 @@ function Shell({ children }) {
           <div className="brand-name">FC Knowledge<small>Production · Traceability</small></div>
         </div>
         <nav>
-          {NAV.filter((n) => !n.perm || user?.permissions?.[n.perm]).map((n) =>
-            n.section ? (
-              <div key={n.section} className="nav-section">{n.section}</div>
-            ) : (
-              <NavLink key={n.to} to={n.to} end={n.end}>
-                <Icon name={n.icon} />{n.label}
-              </NavLink>
-            ),
-          )}
+          {NAV.map((group) => {
+            const items = group.items.filter((n) => !n.show || n.show(user?.permissions ?? {}))
+            return items.length ? (
+              <div key={group.section} className="nav-group" role="group" aria-label={group.section}>
+                <div className="nav-section">{group.section}</div>
+                {items.map((n) => (
+                  <NavLink key={n.to} to={n.to} end={n.end}>
+                    <Icon name={n.icon} />{n.label}
+                  </NavLink>
+                ))}
+              </div>
+            ) : null
+          })}
         </nav>
         <div className="spacer" />
         <div className="who">
@@ -178,7 +196,10 @@ export default function App() {
   return (
     <Shell>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Home />} />
+        <Route path="/queue" element={<MyQueue />} />
+        <Route path="/tasks" element={<Tasks />} />
+        <Route path="/report" element={<Report />} />
         <Route path="/fcs" element={<FcList />} />
         <Route path="/fcs/new" element={<FcCreate />} />
         <Route path="/fcs/:id" element={<FcDetail />} />

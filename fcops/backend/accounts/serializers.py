@@ -56,7 +56,16 @@ class MeSerializer(UserSerializer):
         fields = UserSerializer.Meta.fields + ("permissions",)
 
     def get_permissions(self, user):
+        from access import policy
+        from .permissions import CanWriteProduction
+        can_view_fcs = policy.can_view_fcs(user)
         return {
+            # Record-scope flags from access.policy (WP10 Home). Display only;
+            # every endpoint enforces scope again.
+            "is_head_or_manager": policy.is_head_or_manager(user),
+            "can_view_fcs": can_view_fcs,
+            "can_register_fc": can_view_fcs and (
+                user.is_admin_role or user.role in CanWriteProduction.allowed_roles),
             "is_admin": user.is_admin_role,
             "is_manager": user.is_manager_role,
             "is_lead": user.is_lead_role,

@@ -1,7 +1,7 @@
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
-from rest_framework import viewsets
+from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from django.db.models import Q
@@ -430,6 +430,18 @@ class HandoffViewSet(ScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
         return Response(HandoffSerializer(handoff).data)
 
 
+class QueueIssueSerializer(IssueListSerializer):
+    """Queue rows carry the acknowledgement deadline so Home can show it."""
+    ack_due_at = serializers.SerializerMethodField()
+
+    class Meta(IssueListSerializer.Meta):
+        fields = IssueListSerializer.Meta.fields + ("ack_due_at",)
+
+    def get_ack_due_at(self, obj):
+        from .deadlines import ack_due_at
+        return None if obj.acknowledged_at else ack_due_at(obj)
+
+
 class MyQueueView(APIView):
     """What I am accountable for, what awaits my acknowledgement, and the
     handoffs awaiting my response. Built from access.policy scopes."""
@@ -445,11 +457,19 @@ class MyQueueView(APIView):
             .select_related("issue", "to_department")
             if services.can_respond(h, user)]
         ctx = {"request": request}
+        from tasks.models import DailyUpdate
+        from tasks.serializers import TaskSerializer
+        from tasks.services import today
+        from tasks.views import my_tasks
+        tasks = my_tasks(user).select_related("accountable_user", "department")            .prefetch_related("collaborators__user")
         return Response({
-            "accountable": IssueListSerializer(mine, many=True, context=ctx).data,
-            "awaiting_acknowledgement": IssueListSerializer(awaiting, many=True,
-                                                            context=ctx).data,
+            "accountable": QueueIssueSerializer(mine, many=True, context=ctx).data,
+            "awaiting_acknowledgement": QueueIssueSerializer(awaiting, many=True,
+                                                             context=ctx).data,
             "handoffs_awaiting_response": HandoffSerializer(handoffs, many=True).data,
+            # WP10
+            "tasks": TaskSerializer(tasks, many=True, context=ctx).data,
+            "updated_today": DailyUpdate.objects.filter(author=user, date=today()).exists(),
         })
 
 

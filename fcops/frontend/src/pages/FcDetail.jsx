@@ -4,7 +4,7 @@ import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
 import {
   Banner, Card, Empty, Field, Icon, IssueLink, PageHeader, PageSkeleton, SeverityTag,
-  StatusTag, Tabs, Tag, humanize, when,
+  StatusTag, Tabs, Tag, OwnerTag, UrgencyTag, humanize, when,
 } from '../components/ui.jsx'
 
 const TEST_STAGES = ['SENSOR_VALIDATION', 'BENCH_TESTING', 'GROUND_TESTING', 'FINAL_VALIDATION']
@@ -345,7 +345,7 @@ function IssuesTable({ issues }) {
     <div className="table-wrap">
       <table>
         <thead><tr><th>Key</th><th>Title</th><th>Discovered at</th><th>Assigned to</th>
-          <th>Severity</th><th>Status</th></tr></thead>
+          <th>Urgency</th><th>Owner</th><th>Severity</th><th>Status</th></tr></thead>
         <tbody>
           {issues.map((i) => (
             <tr key={i.id}>
@@ -354,6 +354,8 @@ function IssuesTable({ issues }) {
               <td className="small">{i.stage_label}<br />
                 <span className="muted">{i.discovering_department_name}</span></td>
               <td className="small">{i.assigned_department_name || '—'}</td>
+              <td><UrgencyTag value={i.urgency} /></td>
+              <td><OwnerTag name={i.accountable_user_name} /></td>
               <td><SeverityTag value={i.severity} /></td>
               <td><StatusTag value={i.status} /></td>
             </tr>

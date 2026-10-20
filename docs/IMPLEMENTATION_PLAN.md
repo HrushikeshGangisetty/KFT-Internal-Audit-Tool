@@ -512,6 +512,8 @@ Unaccepted handoffs use the normal policy, measured from `proposed_at`, escalati
 - [ ] Scenario 11: a blocker and a dated update appear in the head view; yesterday's update is unchanged after today's update.
 - [ ] `sw_member` cannot see another Software member's task unless they are a collaborator.
 
+**Implemented:** 20 October 2026, with a role-aware Home/navigation rework; see `docs/worklog/WP10.md` for scope, evidence and limitations. Direct commit and push to main authorised by the user.
+
 ---
 
 ### WP11 — Releases with dual authenticated approval

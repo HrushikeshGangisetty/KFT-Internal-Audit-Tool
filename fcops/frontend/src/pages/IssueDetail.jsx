@@ -3,8 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { api, listOf } from '../lib/api'
 import { useAuth } from '../lib/auth.jsx'
 import {
-  Banner, Card, Empty, FcLink, Field, Icon, PageHeader, PageSkeleton, SeverityTag, StatusTag,
-  Tag, humanize, when,
+  Banner, Card, DueTag, Empty, FcLink, Field, Icon, OwnerTag, PageHeader, PageSkeleton, SeverityTag,
+  StatusTag, Tag, UrgencyTag, humanize, when,
 } from '../components/ui.jsx'
 import SimilarPanel from './SimilarPanel.jsx'
 
@@ -59,15 +59,18 @@ export default function IssueDetail() {
         title={issue.title}
         meta={<>
           <span className="mono small muted">{issue.key}</span>
+          <UrgencyTag value={issue.urgency} />
           <StatusTag value={issue.status} />
+          <OwnerTag name={issue.accountable_user_name} />
+          {issue.ack_due_at ? <DueTag at={issue.ack_due_at} label="Ack" /> : null}
           <SeverityTag value={issue.severity} />
           <Tag>{humanize(issue.category)}</Tag>
           {issue.is_recurring ? <Tag tone="warn">recurring</Tag> : null}
           {issue.is_waiting ? <Tag>waiting: {issue.waiting_reason}</Tag> : null}
         </>}
-        actions={<Link className="btn secondary" to={`/fcs/${issue.fc}`}>
+        actions={issue.fc ? <Link className="btn secondary" to={`/fcs/${issue.fc}`}>
           <Icon name="chip" />{issue.fc_serial}
-        </Link>}
+        </Link> : null}
       />
 
       <Banner>{error}</Banner>
