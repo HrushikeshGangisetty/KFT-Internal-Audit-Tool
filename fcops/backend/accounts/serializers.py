@@ -1,7 +1,7 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from .models import Department, Role, User
+from .models import Capability, Department, Role, User
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -66,6 +66,13 @@ class MeSerializer(UserSerializer):
             "can_view_fcs": can_view_fcs,
             "can_register_fc": can_view_fcs and (
                 user.is_admin_role or user.role in CanWriteProduction.allowed_roles),
+            # Release capabilities (WP11-WP13), from audited grants.
+            "can_draft_release": policy.has_capability(user, Capability.CAN_DRAFT_RELEASE),
+            "can_send_announcements": policy.has_capability(
+                user, Capability.CAN_SEND_ANNOUNCEMENTS),
+            "release_approval_roles": [role for role, cap in (
+                ("software_head", Capability.IS_SOFTWARE_HEAD),
+                ("manager", Capability.IS_MANAGER)) if policy.has_capability(user, cap)],
             "is_admin": user.is_admin_role,
             "is_manager": user.is_manager_role,
             "is_lead": user.is_lead_role,
@@ -76,9 +83,7 @@ class MeSerializer(UserSerializer):
             # Capability flags for the configuration features. The frontend uses
             # these to decide what to show; the backend enforces them again on
             # every write.
-            "can_push_software_update": user.can_push_software_update,
             "can_manage_firmware": user.can_manage_firmware,
-            "can_approve_software_update": user.can_approve_software_update,
             "can_configure_tests": user.is_manager_role,
             "can_manage_fc_models": user.is_manager_role,
         }

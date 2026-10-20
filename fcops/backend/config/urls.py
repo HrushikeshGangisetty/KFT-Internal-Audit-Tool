@@ -11,7 +11,7 @@ from fc.views import (ChecklistItemViewSet, ChecklistTemplateViewSet,
                       FCModelTypeViewSet, FirmwareBuildViewSet,
                       FirmwareRecordViewSet, FlightControllerViewSet,
                       LifecycleMetaView, ParameterProfileViewSet,
-                      ReworkRecordViewSet, SoftwareUpdateViewSet,
+                      ReworkRecordViewSet,
                       SoftwareVersionViewSet, StageRecordViewSet,
                       TestResultViewSet, ParameterFileViewSet,
                       ConfigEvidenceViewSet, ParameterComparisonViewSet)
@@ -20,12 +20,15 @@ from issues.views import (HandoffViewSet, IssueAttachmentViewSet, IssueViewSet,
 
 from customers.views import CustomerViewSet, ContactViewSet, DeploymentViewSet
 from tasks.views import DailyUpdateViewSet, ProgressView, TaskViewSet
+from releases.views import CampaignViewSet, ReleaseViewSet
 
 router = DefaultRouter()
 router.register("customers", CustomerViewSet, basename="customer")
 router.register("customer-contacts", ContactViewSet, basename="customercontact")
 router.register("deployments", DeploymentViewSet, basename="deployment")
 router.register("tasks", TaskViewSet, basename="task")
+router.register("releases", ReleaseViewSet, basename="release")
+router.register("campaigns", CampaignViewSet, basename="campaign")
 router.register("daily-updates", DailyUpdateViewSet, basename="dailyupdate")
 router.register("departments", DepartmentViewSet, basename="department")
 router.register("users", UserViewSet, basename="user")
@@ -35,7 +38,6 @@ router.register("software-versions", SoftwareVersionViewSet, basename="softwarev
 router.register("checklist-templates", ChecklistTemplateViewSet, basename="checklisttemplate")
 router.register("checklist-items", ChecklistItemViewSet, basename="checklistitem")
 router.register("firmware-builds", FirmwareBuildViewSet, basename="firmwarebuild")
-router.register("software-updates", SoftwareUpdateViewSet, basename="softwareupdate")
 router.register("fcs", FlightControllerViewSet, basename="flightcontroller")
 router.register("stage-records", StageRecordViewSet, basename="stagerecord")
 router.register("rework-records", ReworkRecordViewSet, basename="reworkrecord")

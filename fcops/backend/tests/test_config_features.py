@@ -1,4 +1,4 @@
-"""Software release records, the firmware catalogue, manager-configurable test
+"""The firmware catalogue, manager-configurable test
 checklists and FC models — including the history-preservation guarantees."""
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -10,8 +10,7 @@ from fc import config_services as cfg
 from fc import services as fcsvc
 from fc.lifecycle import Stage
 from fc.models import (ChecklistItem, ChecklistTemplate, FCModelType,
-                       FirmwareBuild, FirmwareRecord, SoftwareUpdate,
-                       SoftwareVersion, TestResult)
+                       FirmwareBuild, FirmwareRecord, TestResult)
 
 from .factories import make_department, make_fc_model, make_user
 
@@ -43,145 +42,6 @@ class ConfigTestCase(TestCase):
                                format="json")
         assert response.status_code == 200, response.content
         return client
-
-
-# ---------------------------------------------------------------------------
-# 1. Software "Push Update"
-# ---------------------------------------------------------------------------
-class SoftwareUpdateTests(ConfigTestCase):
-    PAYLOAD = {
-        "kind": "GCS", "version": "2.6.0", "git_sha": "9f2c1ab4d7e5",
-        "release_notes": "Restored the serial handshake timeout to 500 ms and "
-                         "fixed the telemetry reconnect loop.",
-    }
-
-    def _payload(self, **overrides):
-        data = dict(self.PAYLOAD, approved_by=self.sw_lead.id)
-        data.update(overrides)
-        return data
-
-    def test_software_user_can_push_an_update(self):
-        response = self.client_for(self.sw_dev).post(
-            "/api/software-updates/", self._payload(), format="json")
-        self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(response.data["version"], "2.6.0")
-        self.assertEqual(response.data["pushed_by"], self.sw_dev.id)
-        self.assertEqual(response.data["approved_by"], self.sw_lead.id)
-        self.assertIsNotNone(response.data["approved_at"])
-
-    def test_non_software_user_cannot_push_an_update(self):
-        for user in (self.tech, self.tester, self.fw_eng, self.manager):
-            with self.subTest(user=user.username):
-                response = self.client_for(user).post(
-                    "/api/software-updates/", self._payload(), format="json")
-                self.assertEqual(response.status_code, 403, response.content)
-        self.assertFalse(SoftwareUpdate.objects.exists())
-
-    def test_admin_can_push_an_update(self):
-        response = self.client_for(self.admin).post(
-            "/api/software-updates/", self._payload(), format="json")
-        self.assertEqual(response.status_code, 201, response.content)
-
-    def test_git_sha_is_required(self):
-        response = self.client_for(self.sw_dev).post(
-            "/api/software-updates/", self._payload(git_sha=""), format="json")
-        self.assertEqual(response.status_code, 400)
-        with self.assertRaises(WorkflowError) as ctx:
-            cfg.push_software_update(actor=self.sw_dev, kind="GCS", version="9.9",
-                                     git_sha="   ", release_notes="x",
-                                     approved_by=self.sw_lead)
-        self.assertEqual(ctx.exception.code, "git_sha_required")
-
-    def test_release_notes_are_required(self):
-        response = self.client_for(self.sw_dev).post(
-            "/api/software-updates/", self._payload(release_notes=""),
-            format="json")
-        self.assertEqual(response.status_code, 400)
-        with self.assertRaises(WorkflowError) as ctx:
-            cfg.push_software_update(actor=self.sw_dev, kind="GCS", version="9.9",
-                                     git_sha="abc", release_notes="  ",
-                                     approved_by=self.sw_lead)
-        self.assertEqual(ctx.exception.code, "release_notes_required")
-
-    def test_approver_is_required_and_must_be_authorised(self):
-        response = self.client_for(self.sw_dev).post(
-            "/api/software-updates/", self._payload(approved_by=None),
-            format="json")
-        self.assertEqual(response.status_code, 400)
-
-        with self.assertRaises(WorkflowError) as ctx:
-            cfg.push_software_update(actor=self.sw_dev, kind="GCS", version="9.9",
-                                     git_sha="abc", release_notes="notes",
-                                     approved_by=None)
-        self.assertEqual(ctx.exception.code, "approver_required")
-
-        # A technician cannot sign off a release.
-        with self.assertRaises(WorkflowError) as ctx:
-            cfg.push_software_update(actor=self.sw_dev, kind="GCS", version="9.9",
-                                     git_sha="abc", release_notes="notes",
-                                     approved_by=self.tech)
-        self.assertEqual(ctx.exception.code, "approver_not_authorised")
-
-    def test_duplicate_version_is_rejected(self):
-        client = self.client_for(self.sw_dev)
-        client.post("/api/software-updates/", self._payload(), format="json")
-        response = client.post("/api/software-updates/", self._payload(),
-                               format="json")
-        self.assertEqual(response.status_code, 409, response.content)
-
-    def test_history_is_retrievable_by_everyone(self):
-        self.client_for(self.sw_dev).post("/api/software-updates/",
-                                          self._payload(), format="json")
-        self.client_for(self.sw_dev).post(
-            "/api/software-updates/",
-            self._payload(kind="CONFIGURATOR", version="1.10.0"), format="json")
-        for user in (self.tech, self.tester, self.manager):
-            with self.subTest(user=user.username):
-                response = self.client_for(user).get("/api/software-updates/")
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.data["count"], 2)
-        row = response.data["results"][0]
-        for field in ("version", "git_sha", "short_sha", "pushed_by_name",
-                      "approved_by_name", "created_at", "release_notes"):
-            self.assertIn(field, row)
-
-    def test_pushing_registers_the_version_for_test_records(self):
-        """The release history and the tester-facing version list must not
-        drift apart."""
-        self.client_for(self.sw_dev).post("/api/software-updates/",
-                                          self._payload(), format="json")
-        self.assertTrue(
-            SoftwareVersion.objects.filter(kind="GCS", version="2.6.0").exists())
-
-    def test_release_records_are_immutable(self):
-        client = self.client_for(self.sw_dev)
-        created = client.post("/api/software-updates/", self._payload(),
-                              format="json")
-        update_id = created.data["id"]
-        self.assertEqual(
-            client.patch(f"/api/software-updates/{update_id}/",
-                         {"version": "9.9.9"}, format="json").status_code, 405)
-        self.assertEqual(
-            client.delete(f"/api/software-updates/{update_id}/").status_code, 405)
-
-    def test_push_and_approval_are_audited(self):
-        self.client_for(self.sw_dev).post("/api/software-updates/",
-                                          self._payload(), format="json")
-        entries = AuditLogEntry.objects.filter(entity_type="SoftwareUpdate")
-        actions = set(entries.values_list("action", flat=True))
-        self.assertIn(AuditLogEntry.ACTION_SOFTWARE_PUSH, actions)
-        self.assertIn(AuditLogEntry.ACTION_APPROVE, actions)
-        self.assertEqual(entries.first().actor, self.sw_dev)
-
-    def test_approvers_endpoint_lists_only_authorised_users(self):
-        response = self.client_for(self.sw_dev).get(
-            "/api/software-updates/approvers/")
-        self.assertEqual(response.status_code, 200)
-        usernames = {row["username"] for row in response.data}
-        self.assertIn("swlead", usernames)
-        self.assertIn("mgr", usernames)
-        self.assertNotIn("tech", usernames)
-        self.assertNotIn("swdev", usernames)
 
 
 # ---------------------------------------------------------------------------
@@ -546,21 +406,16 @@ class CapabilityFlagTests(ConfigTestCase):
 
     def test_flags_match_the_enforced_permissions(self):
         expectations = {
-            self.sw_dev: {"can_push_software_update": True,
-                          "can_manage_firmware": False,
+            self.sw_dev: {"can_manage_firmware": False,
                           "can_configure_tests": False},
-            self.fw_eng: {"can_push_software_update": False,
-                          "can_manage_firmware": True,
+            self.fw_eng: {"can_manage_firmware": True,
                           "can_configure_tests": False},
-            self.manager: {"can_push_software_update": False,
-                           "can_manage_firmware": False,
+            self.manager: {"can_manage_firmware": False,
                            "can_configure_tests": True,
                            "can_manage_fc_models": True},
-            self.admin: {"can_push_software_update": True,
-                         "can_manage_firmware": True,
+            self.admin: {"can_manage_firmware": True,
                          "can_configure_tests": True},
-            self.tech: {"can_push_software_update": False,
-                        "can_manage_firmware": False,
+            self.tech: {"can_manage_firmware": False,
                         "can_configure_tests": False},
         }
         for user, expected in expectations.items():

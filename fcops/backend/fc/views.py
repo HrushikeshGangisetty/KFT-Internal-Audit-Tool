@@ -7,9 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from accounts.models import Department, Role, User
-from accounts.permissions import (CanManageFirmware, CanPushSoftwareUpdate,
-                                  CanWriteProduction, IsAdmin, IsManager,
+from accounts.models import Department
+from accounts.permissions import (CanManageFirmware, CanWriteProduction, IsAdmin, IsManager,
                                   IsManagerOrReadOnly)
 from access import policy
 from access.mixins import ScopedViewSetMixin
@@ -22,14 +21,13 @@ from .lifecycle import (ALLOWED_REWORK_TARGETS, STAGE_ORDER, TEST_STAGES, Stage,
                         rework_targets)
 from .models import (ChecklistItem, ChecklistTemplate, FCModelType,
                      FirmwareBuild, FirmwareRecord, FlightController,
-                     ParameterProfile, ReworkRecord, SoftwareUpdate,
+                     ParameterProfile, ReworkRecord,
                      SoftwareVersion, StageRecord, StageStatus, TestResult)
 from .serializers import (ActiveFlagSerializer, ApprovalSerializer,
                           ChecklistItemSerializer,
                           ChecklistTemplateDetailSerializer,
                           ChecklistTemplateSerializer, FirmwareBuildSerializer,
                           FlashBuildSerializer, ReorderSerializer,
-                          SoftwareUpdateCreateSerializer, SoftwareUpdateSerializer,
                           FCCreateSerializer, FCEventSerializer,
                           FCModelTypeSerializer, FirmwareRecordSerializer,
                           FlightControllerDetailSerializer,
@@ -417,68 +415,6 @@ class LifecycleMetaView(viewsets.ViewSet):
 # ---------------------------------------------------------------------------
 # Configuration & catalogue features
 # ---------------------------------------------------------------------------
-class SoftwareUpdateViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
-    """Internal release records for the in-house GCS / Configurator.
-
-    Readable by everyone (the release history is knowledge), writable only by
-    the Software department. Records are never edited or deleted: a release
-    happened, and correcting it means pushing another one.
-    """
-
-    serializer_class = SoftwareUpdateSerializer
-    permission_classes = [CanPushSoftwareUpdate]
-    filterset_fields = ("kind", "approved_by", "pushed_by")
-    ordering_fields = ("created_at", "version")
-
-    def get_scoped_queryset(self):
-        # Release history: readable by all staff until WP11.
-        return SoftwareUpdate.objects.select_related(
-            "approved_by", "pushed_by", "software_version")
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        search = self.request.query_params.get("search")
-        if search:
-            qs = qs.filter(Q(version__icontains=search)
-                           | Q(git_sha__icontains=search)
-                           | Q(release_notes__icontains=search))
-        return qs
-
-    def create(self, request, *args, **kwargs):
-        s = SoftwareUpdateCreateSerializer(data=request.data)
-        s.is_valid(raise_exception=True)
-        data = s.validated_data
-        update = config_services.push_software_update(
-            kind=data["kind"], version=data["version"], git_sha=data["git_sha"],
-            release_notes=data["release_notes"],
-            approved_by=User.objects.filter(pk=data["approved_by"]).first(),
-            actor=request.user)
-        return Response(SoftwareUpdateSerializer(update).data,
-                        status=http_status.HTTP_201_CREATED)
-
-    def update(self, request, *args, **kwargs):
-        return Response(
-            {"detail": "A release record is immutable. Push a new update instead."},
-            status=http_status.HTTP_405_METHOD_NOT_ALLOWED)
-
-    partial_update = update
-
-    def destroy(self, request, *args, **kwargs):
-        return Response(
-            {"detail": "Release history is never deleted."},
-            status=http_status.HTTP_405_METHOD_NOT_ALLOWED)
-
-    @action(detail=False, methods=["get"])
-    def approvers(self, request):
-        """Users entitled to sign off a release — leads, managers and admins."""
-        from accounts.serializers import UserSerializer
-        qs = User.objects.filter(
-            is_active=True,
-            role__in=[Role.DEPARTMENT_LEAD, Role.MANAGER, Role.ADMIN]
-        ).select_related("department").order_by("full_name", "username")
-        return Response(UserSerializer(qs, many=True).data)
-
-
 class FirmwareBuildViewSet(ScopedViewSetMixin, viewsets.ModelViewSet):
     """The catalogue of firmware builds that may be flashed onto an FC."""
 

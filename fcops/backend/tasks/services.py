@@ -14,7 +14,7 @@ from core.models import AuditLogEntry
 from .models import DailyUpdate, Task, TaskCollaborator
 
 TASK_FIELDS = ("title", "description", "accountable_user", "department", "priority",
-               "due_date", "status", "issue", "fc")
+               "due_date", "status", "issue", "fc", "release")
 
 
 def today():

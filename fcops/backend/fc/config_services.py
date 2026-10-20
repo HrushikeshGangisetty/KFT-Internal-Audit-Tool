@@ -16,73 +16,7 @@ from core.models import AuditLogEntry
 
 from .lifecycle import Stage
 from .models import (ChecklistItem, ChecklistTemplate, FCModelType, FirmwareBuild,
-                     FirmwareRecord, SoftwareUpdate, SoftwareVersion)
-
-
-# --------------------------------------------------------------------------
-# Software release records
-# --------------------------------------------------------------------------
-@transaction.atomic
-def push_software_update(*, kind, version, git_sha, release_notes, approved_by,
-                         actor, approved_at=None):
-    """Record a GCS / Configurator release.
-
-    Git SHA, release notes and an approver are all mandatory: without them the
-    record does not achieve the one thing it exists for — tying a version
-    people are running to the commit that produced it and the person who
-    signed it off.
-    """
-    if not actor or not actor.can_push_software_update:
-        raise WorkflowError(
-            "Only the Software department (or an admin) may push a software "
-            "update.", code="forbidden")
-
-    kind = (kind or "").strip().upper()
-    if kind not in dict(SoftwareUpdate.KIND_CHOICES):
-        raise WorkflowError(f"Unknown software type '{kind}'.", code="invalid_kind")
-    version = (version or "").strip()
-    git_sha = (git_sha or "").strip()
-    release_notes = (release_notes or "").strip()
-
-    if not version:
-        raise WorkflowError("A version is required.", code="version_required")
-    if not git_sha:
-        raise WorkflowError("A Git commit SHA is required — it is what ties this "
-                            "release to its source.", code="git_sha_required")
-    if not release_notes:
-        raise WorkflowError("Release notes are required: describe what changed.",
-                            code="release_notes_required")
-    if approved_by is None:
-        raise WorkflowError("An approver is required.", code="approver_required")
-    if not approved_by.can_approve_software_update:
-        raise WorkflowError(
-            f"{approved_by} is not authorised to approve software updates. "
-            "Choose a department lead, a manager or an admin.",
-            code="approver_not_authorised")
-    if SoftwareUpdate.objects.filter(kind=kind, version=version).exists():
-        raise WorkflowError(f"{kind} {version} has already been pushed.",
-                            code="duplicate_version")
-
-    # Registering the version keeps the tester-facing dropdowns in step with
-    # what has actually been released.
-    software_version, _ = SoftwareVersion.objects.get_or_create(
-        kind=kind, version=version,
-        defaults={"released_on": timezone.now().date(), "notes": release_notes[:500]})
-
-    update = SoftwareUpdate.objects.create(
-        kind=kind, version=version, git_sha=git_sha, release_notes=release_notes,
-        approved_by=approved_by, approved_at=approved_at or timezone.now(),
-        pushed_by=actor, software_version=software_version)
-
-    audit.record(update, AuditLogEntry.ACTION_SOFTWARE_PUSH, actor=actor,
-                 after=audit.snapshot(update),
-                 note=f"{update.get_kind_display()} {version} pushed "
-                      f"(commit {update.short_sha})")
-    audit.record(update, AuditLogEntry.ACTION_APPROVE, actor=actor,
-                 after={"approved_by": str(approved_by),
-                        "approved_at": update.approved_at.isoformat()},
-                 note=f"Release approved by {approved_by}")
-    return update
+                     FirmwareRecord)
 
 
 # --------------------------------------------------------------------------

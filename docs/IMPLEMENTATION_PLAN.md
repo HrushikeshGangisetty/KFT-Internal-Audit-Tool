@@ -535,11 +535,13 @@ Unaccepted handoffs use the normal policy, measured from `proposed_at`, escalati
 - `approve(revision, actor, role, comment)`: `select_for_update` on the release; verify the actor holds the role's capability; verify the revision is the latest; reject if the same user already approved this revision in the other role.
 - Drafting a revision requires `can_draft_release`. Approval does not.
 
+**Implemented:** 20 October 2026, together with WP11–WP13 in one commit on main; see `docs/worklog/WP11.md`.
+
 **Acceptance**
 
-- [ ] Scenario 9: one approval does not approve; two approvals by the same person (in both roles) are rejected; an edit after both approvals produces a new unapproved revision, and announcement is blocked until it is re-approved.
-- [ ] Legacy releases show "legacy — not approved under current process".
-- [ ] An administrator without the capability cannot approve.
+- [x] Scenario 9: one approval does not approve; two approvals by the same person (in both roles) are rejected; an edit after both approvals produces a new unapproved revision, and announcement is blocked until it is re-approved.
+- [x] Legacy releases show "legacy — not approved under current process".
+- [x] An administrator without the capability cannot approve.
 
 ---
 
@@ -553,10 +555,12 @@ Unaccepted handoffs use the normal policy, measured from `proposed_at`, escalati
 - `RecipientSnapshot(source, segment, fetched_at, fetched_by, recipients jsonb, count)` is the frozen list a campaign is built from.
 - Contact data visibility: snapshots are visible only to users with `can_send_announcements` or `can_view_customer_contacts`.
 
+**Implemented:** 20 October 2026, together with WP11–WP13 in one commit on main; see `docs/worklog/WP11.md`.
+
 **Acceptance**
 
-- [ ] With the API disabled, only synthetic recipients are available, and the UI and every campaign record say so.
-- [ ] A simulated API failure produces an error state, not an empty or partial list that looks complete.
+- [x] With the API disabled, only synthetic recipients are available, and the UI and every campaign record say so.
+- [x] A simulated API failure produces an error state, not an empty or partial list that looks complete.
 
 ---
 
@@ -577,11 +581,13 @@ Unaccepted handoffs use the normal policy, measured from `proposed_at`, escalati
 4. **Retry:** an explicit action retries only `failed`. `unknown` requires reconciliation first (check the provider log where supported, or mark "confirmed not sent" by an authorised user) before it can be retried.
 5. In development, the email backend is console or file. The pilot uses synthetic recipients, so nothing reaches a real inbox.
 
+**Implemented:** 20 October 2026, together with WP11–WP13 in one commit on main; see `docs/worklog/WP11.md`.
+
 **Acceptance**
 
-- [ ] Scenario 10: preview shows the exact message and count; double-clicking Send (two concurrent requests, same key) creates one campaign; failed and unknown deliveries are listed; retrying only touches `failed` rows.
-- [ ] Internal notes never appear in rendered output (test with a sentinel string in internal notes).
-- [ ] Editing the release after approval blocks sending the existing draft.
+- [x] Scenario 10: preview shows the exact message and count; double-clicking Send (two concurrent requests, same key) creates one campaign; failed and unknown deliveries are listed; retrying only touches `failed` rows.
+- [x] Internal notes never appear in rendered output (test with a sentinel string in internal notes).
+- [x] Editing the release after approval blocks sending the existing draft.
 
 ---
 

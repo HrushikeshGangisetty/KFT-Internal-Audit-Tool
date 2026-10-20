@@ -183,6 +183,32 @@ def visible_daily_updates(user):
     return qs.filter(Q(author=user) | Q(task__in=visible_tasks(user)))
 
 
+# --- releases and announcements (WP11-WP13) --------------------------------
+def visible_releases(user):
+    """Release records and their approvals are engineering knowledge: all
+    authenticated staff. Recipient data is scoped separately below."""
+    from releases.models import Release
+    qs = Release.objects.all()
+    return qs if getattr(user, "is_authenticated", False) else qs.none()
+
+
+def can_see_recipients(user):
+    return (has_capability(user, Capability.CAN_SEND_ANNOUNCEMENTS)
+            or has_capability(user, Capability.CAN_VIEW_CUSTOMER_CONTACTS))
+
+
+def visible_campaigns(user):
+    """Campaigns carry recipient addresses: senders and contact viewers only."""
+    from releases.models import Campaign
+    qs = Campaign.objects.all()
+    return qs if can_see_recipients(user) else qs.none()
+
+
+def visible_campaign_deliveries(user):
+    from releases.models import CampaignDelivery
+    return CampaignDelivery.objects.filter(campaign__in=visible_campaigns(user))
+
+
 # --- notifications and audit ------------------------------------------------
 def visible_notifications(user):
     from core.models import Notification
@@ -208,6 +234,8 @@ def visible_audit_entries(user):
     # Contact snapshots contain restricted fields, including historical values.
     if not has_capability(user, Capability.CAN_VIEW_CUSTOMER_CONTACTS):
         qs = qs.exclude(entity_type="CustomerContact")
+    if not can_see_recipients(user):
+        qs = qs.exclude(entity_type__in=("Campaign", "CampaignDelivery"))
     if not can_view_fcs(user):
         qs = qs.exclude(entity_type__in=("Customer", "Deployment"))
     if has_capability(user, Capability.IS_MANAGER):

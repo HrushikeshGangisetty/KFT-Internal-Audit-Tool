@@ -18,7 +18,7 @@ import IssueDetail from './pages/IssueDetail.jsx'
 import KnownIssues from './pages/KnownIssues.jsx'
 import Search from './pages/Search.jsx'
 import Admin from './pages/Admin.jsx'
-import PushUpdate from './pages/PushUpdate.jsx'
+import Releases from './pages/Releases.jsx'
 import ManageFirmware from './pages/ManageFirmware.jsx'
 import TestConfiguration from './pages/TestConfiguration.jsx'
 import FcModels from './pages/FcModels.jsx'
@@ -34,13 +34,12 @@ const NAV = [
     { to: '/queue', label: 'My queue', icon: 'inbox' },
     { to: '/issues', label: 'Issues', icon: 'alert' },
     { to: '/tasks', label: 'Tasks', icon: 'tasks' },
+    { to: '/releases', label: 'Releases', icon: 'upload' },
   ] },
   { section: 'Hardware', items: [
     { to: '/fcs', label: 'Flight controllers', icon: 'chip', show: fcs },
     { to: '/param-compare', label: 'Test & evidence', icon: 'compare', show: fcs },
     { to: '/firmware/builds', label: 'Firmware', icon: 'cpu', show: (p) => fcs(p) && p.can_manage_firmware },
-    { to: '/software/push-update', label: 'Software updates', icon: 'upload',
-      show: (p) => fcs(p) && p.can_push_software_update },
   ] },
   { section: 'Knowledge', items: [
     { to: '/known-issues', label: 'Known issues', icon: 'book' },
@@ -210,7 +209,9 @@ export default function App() {
         <Route path="/search" element={<Search />} />
         <Route path="/audit" element={<AuditLog />} />
         <Route path="/param-compare" element={<ParamCompare />} />
-        <Route path="/software/push-update" element={<PushUpdate />} />
+        <Route path="/releases" element={<Releases />} />
+        <Route path="/releases/:id" element={<Releases />} />
+        <Route path="/software/push-update" element={<Navigate to="/releases" replace />} />
         <Route path="/firmware/builds" element={<ManageFirmware />} />
         <Route path="/manager/test-configuration" element={<TestConfiguration />} />
         <Route path="/manager/fc-models" element={<FcModels />} />

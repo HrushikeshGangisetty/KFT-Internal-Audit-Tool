@@ -29,11 +29,12 @@ class Task(TimeStampedModel):
     due_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=PLANNED,
                               db_index=True)
-    # Release link waits for WP11's release model.
     issue = models.ForeignKey("issues.Issue", null=True, blank=True,
                               on_delete=models.PROTECT, related_name="tasks")
     fc = models.ForeignKey("fc.FlightController", null=True, blank=True,
                            on_delete=models.PROTECT, related_name="tasks")
+    release = models.ForeignKey("releases.Release", null=True, blank=True,
+                                on_delete=models.PROTECT, related_name="tasks")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
                                    on_delete=models.SET_NULL, related_name="+")
 

@@ -442,8 +442,9 @@ also need the `X-CSRFToken` header from `/api/auth/csrf/`), except
 
 | Endpoint | Who may write | Purpose |
 |---|---|---|
-| `GET/POST /api/software-updates/` | Software department, admin | Internal GCS / Configurator release records. Git SHA, release notes and an authorised approver are mandatory. Records are immutable — `PATCH`/`DELETE` return 405. |
-| `GET /api/software-updates/approvers/` | — | Users entitled to sign off a release (leads, managers, admins). |
+| `GET/POST /api/releases/` · `POST {id}/revise/` | `can_draft_release` grant | GCS / Configurator releases (WP11). Revisions are immutable; an edit is a new revision. Old `software-updates` rows were migrated as legacy releases and are never shown as approved. |
+| `POST /api/releases/{id}/decide/` | `is_software_head` / `is_manager` grant | Authenticated approve/reject of the latest revision in one role. Approved = both roles, two different people. |
+| `GET /api/campaigns/` · `segments/` · `POST preview/` · `{id}/send/` · `retry/` · `reconcile/` · `resend/` | `can_send_announcements` grant (read also `can_view_customer_contacts`) | Announcement email (WP12–13). Synthetic `example.invalid` recipients only until the signup API contract is approved. |
 | `GET/POST/PATCH /api/firmware-builds/` | Firmware department, admin | The firmware build catalogue. |
 | `POST /api/firmware-builds/{id}/set-active/` | Firmware department, admin | Retire or restore a build. |
 | `POST /api/firmware-builds/flash/` | Production writers | Record a flash of a catalogue build onto an FC, copying its fields into the FC's own record. |

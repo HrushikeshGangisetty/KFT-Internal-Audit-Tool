@@ -7,7 +7,7 @@ from accounts.serializers import DepartmentSerializer, UserSerializer
 from .lifecycle import ALLOWED_REWORK_TARGETS, STAGE_ORDER, Stage, rework_targets
 from .models import (ChecklistItem, ChecklistTemplate, FCEvent, FCModelType,
                      FirmwareBuild, FirmwareRecord, FlightController,
-                     ParameterProfile, ReworkRecord, SoftwareUpdate,
+                     ParameterProfile, ReworkRecord,
                      SoftwareVersion, StageRecord, TestResult)
 
 
@@ -229,33 +229,6 @@ class OverrideSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 # Configuration & catalogue features
 # ---------------------------------------------------------------------------
-class SoftwareUpdateSerializer(serializers.ModelSerializer):
-    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
-    pushed_by_name = serializers.CharField(source="pushed_by.full_name",
-                                           read_only=True, default="")
-    approved_by_name = serializers.CharField(source="approved_by.full_name",
-                                             read_only=True, default="")
-    approved_by_role = serializers.CharField(source="approved_by.get_role_display",
-                                             read_only=True, default="")
-    short_sha = serializers.CharField(read_only=True)
-
-    class Meta:
-        model = SoftwareUpdate
-        fields = ("id", "kind", "kind_display", "version", "git_sha", "short_sha",
-                  "release_notes", "approved_by", "approved_by_name",
-                  "approved_by_role", "approved_at", "pushed_by", "pushed_by_name",
-                  "software_version", "created_at")
-        read_only_fields = ("pushed_by", "approved_at", "software_version")
-
-
-class SoftwareUpdateCreateSerializer(serializers.Serializer):
-    kind = serializers.ChoiceField(choices=SoftwareUpdate.KIND_CHOICES)
-    version = serializers.CharField(max_length=64)
-    git_sha = serializers.CharField(max_length=120)
-    release_notes = serializers.CharField()
-    approved_by = serializers.IntegerField()
-
-
 class FirmwareBuildSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.full_name",
                                             read_only=True, default="")

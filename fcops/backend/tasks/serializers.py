@@ -15,6 +15,8 @@ class TaskSerializer(serializers.ModelSerializer):
         queryset=Department.objects.filter(is_active=True), required=False, allow_null=True)
     issue = ScopedPrimaryKeyRelatedField(policy.visible_issues, required=False, allow_null=True)
     fc = ScopedPrimaryKeyRelatedField(policy.visible_fcs, required=False, allow_null=True)
+    release = ScopedPrimaryKeyRelatedField(policy.visible_releases, required=False,
+                                           allow_null=True)
     accountable_user_name = serializers.CharField(source="accountable_user.full_name",
                                                   read_only=True)
     department_name = serializers.CharField(source="department.name", read_only=True,
@@ -26,7 +28,7 @@ class TaskSerializer(serializers.ModelSerializer):
         model = Task
         fields = ("id", "title", "description", "accountable_user", "accountable_user_name",
                   "department", "department_name", "priority", "due_date", "status",
-                  "issue", "fc", "collaborators", "is_overdue", "created_by",
+                  "issue", "fc", "release", "collaborators", "is_overdue", "created_by",
                   "created_at", "updated_at")
         read_only_fields = ("created_by",)
 

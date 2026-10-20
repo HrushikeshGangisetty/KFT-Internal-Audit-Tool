@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "access",
     "customers",
     "tasks",
+    "releases",
 ]
 
 MIDDLEWARE = [
@@ -225,6 +226,13 @@ REOPEN_ALLOWED = [r for r in env(
 # PLACEHOLDER until the PRD decision (§3): ordinary teammates do not see each
 # other's tasks unless this is enabled.
 TASKS_TEAMMATES_VISIBLE = env_bool("TASKS_TEAMMATES_VISIBLE", False)
+
+# --- Releases and announcements (WP11-WP13) ------------------------------
+# Off until the signup API contract is approved: only synthetic
+# example.invalid recipients exist, and nothing reaches a real inbox.
+SIGNUP_API_ENABLED = env_bool("SIGNUP_API_ENABLED", False)
+# A recipient list older than this must be refreshed (preview again) before sending.
+CAMPAIGN_SNAPSHOT_MAX_AGE_MINUTES = int(env("CAMPAIGN_SNAPSHOT_MAX_AGE_MINUTES", "60"))
 
 LOGGING = {
     "version": 1,

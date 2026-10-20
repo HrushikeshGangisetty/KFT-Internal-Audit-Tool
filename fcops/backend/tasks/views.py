@@ -29,7 +29,7 @@ class TaskViewSet(ScopedViewSetMixin, mixins.CreateModelMixin, mixins.UpdateMode
                   viewsets.GenericViewSet):
     # No delete: cancel a task instead, so its updates keep their context.
     serializer_class = TaskSerializer
-    filterset_fields = ("status", "accountable_user", "department", "issue", "fc")
+    filterset_fields = ("status", "accountable_user", "department", "issue", "fc", "release")
 
     def get_scoped_queryset(self):
         user = self.request.user
