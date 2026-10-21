@@ -1,0 +1,640 @@
+<title>KFT Engineering Platform</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a briefing document. Sticky contents rail on wide screens, one reading column of
+   text with full-width screenshots; everything stacks to one column on phones. Palette and
+   status colours are the app's own (slate neutrals, signal blue). */
+:root {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --ink: #111827;
+  --ink-2: #4d5766;
+  --muted: #6b7686;
+  --line: #e3e8ee;
+  --accent: #2557d6;
+  --accent-soft: #eaf0fd;
+  --ok: #12805c; --ok-soft: #e6f5ef;
+  --warn: #a15c07; --warn-soft: #fdf3e2;
+  --bad: #c0362c; --bad-soft: #fdecea;
+  --rail: #0e1726;
+  --rail-ink: #a9b6c8;
+  --display: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d131c; --surface: #141c27; --ink: #e8edf3; --ink-2: #b4bfcc; --muted: #8b97a6;
+    --line: #253041; --accent: #7ea2ff; --accent-soft: #1b2a4a;
+    --ok: #5ee0a8; --ok-soft: #12302a; --warn: #f2b45c; --warn-soft: #33270f;
+    --bad: #ff8a80; --bad-soft: #3a1a1a; --rail: #0a0f17; --rail-ink: #a9b6c8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d131c; --surface: #141c27; --ink: #e8edf3; --ink-2: #b4bfcc; --muted: #8b97a6;
+  --line: #253041; --accent: #7ea2ff; --accent-soft: #1b2a4a;
+  --ok: #5ee0a8; --ok-soft: #12302a; --warn: #f2b45c; --warn-soft: #33270f;
+  --bad: #ff8a80; --bad-soft: #3a1a1a; --rail: #0a0f17; --rail-ink: #a9b6c8;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4vw, 2.6rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 1.55rem; font-weight: 650; letter-spacing: -0.01em; }
+h3 { font-size: 1.12rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--mono); font-size: .9em; }
+.label { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-block: 40px 80px; }
+nav.toc { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+nav.toc a { color: var(--ink-2); text-decoration: none; padding: 4px 10px; border-left: 2px solid var(--line); }
+nav.toc a:hover { color: var(--accent); border-left-color: var(--accent); }
+nav.toc .label { padding: 0 10px 6px; }
+main { min-width: 0; display: flex; flex-direction: column; gap: 64px; }
+section { display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 24px; }
+.section-head { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+
+/* cover */
+.cover { display: flex; flex-direction: column; gap: 18px; }
+.mark { display: flex; align-items: center; gap: 12px; }
+.mark b { width: 40px; height: 40px; border-radius: 9px; background: linear-gradient(135deg, #3b6ff0, #2149b8); color: #fff; display: grid; place-items: center; font-weight: 700; }
+.lede { font-size: 1.15rem; color: var(--ink-2); max-width: 64ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.plain { background: var(--surface); color: var(--ink-2); border: 1px solid var(--line); }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.fact { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
+.fact strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.fact span { color: var(--ink-2); font-size: .9rem; }
+
+/* modules */
+.modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.module { padding: 16px 0 0; border-top: 3px solid var(--accent); display: flex; flex-direction: column; gap: 6px; }
+.module p { color: var(--ink-2); font-size: .95rem; }
+
+/* tables */
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; min-width: 640px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+
+/* screens */
+.screen { display: flex; flex-direction: column; gap: 12px; }
+.screen-text { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 32px; }
+.screen-text > div { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.route { font-family: var(--mono); font-size: .8rem; color: var(--muted); }
+ul.how { margin: 0; padding-left: 1.1em; color: var(--ink-2); font-size: .95rem; display: flex; flex-direction: column; gap: 4px; }
+figure { margin: 0; }
+figure img { display: block; width: 100%; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px -12px rgba(17, 24, 39, .25); background: var(--surface); }
+figure.phone { display: flex; gap: 16px; flex-wrap: wrap; }
+figure.phone img { width: 260px; }
+figcaption { font-size: .85rem; color: var(--muted); margin-top: 6px; }
+
+/* flows */
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: .88rem; font-weight: 500; }
+.step.gate { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.arrow { color: var(--muted); font-size: .9rem; padding: 0 2px; }
+.flow-block { display: flex; flex-direction: column; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+.flow-block p { color: var(--ink-2); font-size: .93rem; }
+
+.list { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 8px; max-width: 72ch; }
+.list li::marker { color: var(--accent); }
+.callout { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 14px 18px; border-radius: 0 10px 10px 0; display: flex; flex-direction: column; gap: 6px; }
+.callout p { color: var(--ink); }
+
+.ideas { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.idea { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.idea p { color: var(--ink-2); font-size: .93rem; }
+
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: 1fr; gap: 32px; padding-block: 24px 56px; }
+  nav.toc { position: static; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  nav.toc .label { width: 100%; }
+  nav.toc a { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+  .screen-text { grid-template-columns: 1fr; }
+  figure.phone img { width: calc(50% - 8px); }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <span class="label">Contents</span>
+    <a href="#summary">Summary</a>
+    <a href="#roles">Who sees what</a>
+    <a href="#start">Sign in &amp; Home</a>
+    <a href="#issues">Issues</a>
+    <a href="#tasks">Tasks</a>
+    <a href="#releases">Releases</a>
+    <a href="#hardware">Hardware</a>
+    <a href="#knowledge">Knowledge</a>
+    <a href="#admin">Configuration</a>
+    <a href="#flows">Key workflows</a>
+    <a href="#safeguards">Safeguards</a>
+    <a href="#quality">Testing</a>
+    <a href="#next">Next steps</a>
+  </nav>
+
+  <main>
+    <header class="cover" id="summary">
+      <div class="mark"><b>K</b><span class="label">KapilFutureTech · Internal engineering platform</span></div>
+      <h1>KFT Engineering Platform</h1>
+      <p class="lede">One place for engineering work: reporting and owning problems, daily tasks,
+        dual-approved software releases, flight-controller production with full traceability,
+        and the knowledge we build up along the way. This briefing walks through every screen and
+        how the pieces fit together.</p>
+      <div class="meta">
+        <span class="pill plain">Status as of 20 Oct 2026</span>
+        <span class="pill ok">WP0–WP13 implemented</span>
+        <span class="pill warn">WP14 waiting on database approval</span>
+        <span class="pill plain">Email: simulated only</span>
+      </div>
+      <div class="facts">
+        <div class="fact"><strong>5</strong><span>work areas in one app: Work, Releases, Hardware, Knowledge, Configuration</span></div>
+        <div class="fact"><strong>21</strong><span>screens, each loaded on demand and usable on a phone</span></div>
+        <div class="fact"><strong>269</strong><span>backend tests passing, including permission and concurrency cases</span></div>
+        <div class="fact"><strong>49</strong><span>browser walkthrough steps passing as 9 different users, no page errors</span></div>
+      </div>
+      <div class="modules">
+        <div class="module"><h3>Work</h3><p>Report a problem in seconds, see what is waiting on you, acknowledge, hand off, track tasks and post a daily update.</p></div>
+        <div class="module"><h3>Releases</h3><p>GCS and Configurator releases need the Software head and the manager to approve. Then a previewed announcement is sent once.</p></div>
+        <div class="module"><h3>Hardware</h3><p>Every flight controller from fabrication to manager approval, with stages, failures, rework, firmware, tests and parameter evidence.</p></div>
+        <div class="module"><h3>Knowledge</h3><p>Search every past issue, curated known issues with their fixes, and an append-only activity log.</p></div>
+      </div>
+    </header>
+
+    <section id="roles">
+      <div class="section-head">
+        <span class="label">Access</span>
+        <h2>Who sees what</h2>
+        <p>The sidebar shows only what a role can use, but hiding is a convenience. Every request is checked again on the server, including search results, counts, linked records and attachments.</p>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Role</th><th>Sees</th><th>Can do in addition</th></tr></thead>
+          <tbody>
+            <tr><td>Team member</td><td>Their team's issues, their own reports, issues shared with them, their tasks</td><td>Report problems, add notes, post daily updates, work FCs through stages if on the production floor</td></tr>
+            <tr><td>Test engineer</td><td>As a member, plus issues they are asked to verify</td><td>Independently verify a fix someone else resolved</td></tr>
+            <tr><td>Department head</td><td>All engineering issues and team progress</td><td>Reassign, accept or reject handoffs, promote fixes to known issues, verify</td></tr>
+            <tr><td>Software head</td><td>As a head</td><td>One of the two release approvals</td></tr>
+            <tr><td>Firmware team</td><td>As members</td><td>Maintain the firmware build catalogue</td></tr>
+            <tr><td>Manager</td><td>Everything a head sees</td><td>Final FC approval, the second release approval, test checklists and FC models</td></tr>
+            <tr><td>Account admin</td><td>Account screens</td><td>Users, departments, software version list</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Customer contact details and announcement recipients need their own separate permissions; seeing an issue does not grant them.</p>
+    </section>
+
+    <section id="start">
+      <div class="section-head">
+        <span class="label">Getting around</span>
+        <h2>Sign in, Home and navigation</h2>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Sign in</h3><span class="route">/login</span>
+            <p>Company accounts with a server-side session. Nothing that could be stolen from the browser is stored in it.</p></div>
+          <ul class="how">
+            <li>Session cookie is HttpOnly; no tokens in browser storage (checked by the walkthrough).</li>
+            <li>Deactivating a user ends their sessions immediately.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/01-login.png" alt="Sign-in page" loading="lazy" width="1440" height="900"></figure>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Home for a team member</h3><span class="route">/</span>
+            <p>Opens on what is waiting for this person: the big "Report a problem" button, FC lookup, their queue and recent activity.</p></div>
+          <ul class="how">
+            <li>Queue tabs: issues I own, reports to acknowledge, handoffs to answer, my tasks.</li>
+            <li>Shows whether today's update is posted, with a one-click link if not.</li>
+            <li>Home previews six items per tab and links to the full queue.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/02-home-member.png" alt="Home page for a technician" loading="lazy" width="1440" height="900"></figure>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Home for heads and the manager</h3><span class="route">/</span>
+            <p>Adds a <em>Needs attention</em> panel across every team they can see.</p></div>
+          <ul class="how">
+            <li>Lists: unacknowledged past target, escalated, blocked tasks, blocked FCs, no update today.</li>
+            <li>Plain lists with counts. No per-person rankings, by design.</li>
+            <li>FC pipeline shows units per lifecycle stage.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/03-home-manager.png" alt="Home page for the manager with Needs attention" loading="lazy" width="1440" height="900"></figure>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>On a phone</h3>
+            <p>Same app on Android or Windows browsers. The menu folds into a drawer; buttons are at least 44&nbsp;px tall.</p></div>
+          <ul class="how">
+            <li>Menu button opens the drawer; choosing a page closes it.</li>
+            <li>Every screen stacks to one column with no sideways scrolling (checked at 375&nbsp;px).</li>
+          </ul>
+        </div>
+        <figure class="phone">
+          <img src="screens/27-phone-home.png" alt="Home on a phone" loading="lazy" width="390" height="844">
+          <img src="screens/28-phone-menu.png" alt="Navigation drawer open on a phone" loading="lazy" width="390" height="844">
+        </figure>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Notifications and quick search</h3>
+            <p>The bell shows unread alerts (assignments, acknowledgement deadlines, escalations, approvals). The search box at the top searches every past issue you can see from any page.</p></div>
+          <ul class="how">
+            <li>Opening the bell marks alerts as read.</li>
+            <li>Alerts come from a background worker, so deadlines fire even when nobody is logged in.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/26-notifications.png" alt="Notifications popover" loading="lazy" width="1440" height="900"></figure>
+      </div>
+    </section>
+
+    <section id="issues">
+      <div class="section-head">
+        <span class="label">Work</span>
+        <h2>Issues: report, own, resolve, verify</h2>
+        <p>An issue can be about anything: a field report, a software bug, a production fault. An FC, stage or version is optional.</p>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Report a problem</h3><span class="route">/report</span>
+            <p>Three required things: what the problem is, what you saw, and how urgent it is. Everything else, including photos and logs, is optional.</p></div>
+          <ul class="how">
+            <li>The report is routed to a team queue automatically; the queue head becomes accountable.</li>
+            <li>An acknowledgement deadline starts; missed deadlines escalate.</li>
+            <li>Large touch-friendly urgency choice for phone use on the floor.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/05-report.png" alt="Report a problem form" loading="lazy" width="1440" height="900"></figure>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>My queue</h3><span class="route">/queue</span>
+            <p>Everything waiting on you in one place, with the action next to each row.</p></div>
+          <ul class="how">
+            <li><strong>Acknowledge</strong> confirms you have seen a report. Ownership and progress are tracked separately.</li>
+            <li><strong>Handoffs</strong>: accept, or reject with a reason. The issue never ends up without an accountable owner.</li>
+            <li>Overdue acknowledgements are shown in red.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/04-queue.png" alt="My queue" loading="lazy" width="1440" height="900"></figure>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Issue list</h3><span class="route">/issues</span>
+            <p>All issues you may see, with urgency, owner, severity and status at a glance.</p></div>
+          <ul class="how">
+            <li>Filters: full-text, status, severity, category, stage, department.</li>
+            <li>Loads 25 at a time and fetches more as you scroll, so it stays fast as history grows.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/06-issues.png" alt="Issue list" loading="lazy" width="1440" height="900"></figure>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Issue detail</h3><span class="route">/issues/&lt;id&gt;</span>
+            <p>The full record: what was seen, the investigation, root cause and fix, who verified it, and where it was discovered compared with where it originated.</p></div>
+          <ul class="how">
+            <li>Investigation notes are append-only.</li>
+            <li>Reassignment always needs a reason and is kept in the history.</li>
+            <li>Verification must be done by someone other than the resolver.</li>
+            <li>A head can promote the fix to a known issue; similar past issues are listed alongside.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/07-issue-detail.png" alt="Issue detail" loading="lazy" width="1440" height="900"></figure>
+      </div>
+
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>"Has this happened before?"</h3><span class="route">/issues/new</span>
+            <p>While someone types a symptom, matching past issues and known fixes appear beside the form.</p></div>
+          <ul class="how">
+            <li>Matches only what the person is allowed to see.</li>
+            <li>Uses FC, stage, category and version details to rank matches.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/08-fc-issue-similar.png" alt="Similar issue suggestions while typing" loading="lazy" width="1440" height="900"></figure>
+      </div>
+    </section>
+
+    <section id="tasks">
+      <div class="section-head">
+        <span class="label">Work</span>
+        <h2>Tasks and daily progress</h2>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>My tasks and today's update</h3><span class="route">/tasks</span>
+            <p>Planned work with status, priority and due date, plus a short daily note: progress, next step, blockers.</p></div>
+          <ul class="how">
+            <li>Earlier days' updates are kept as written; only today's can be corrected, and the correction keeps history.</li>
+            <li>Heads can assign tasks to others; members manage their own.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/09-tasks.png" alt="Tasks and daily update" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Team progress (heads and manager)</h3><span class="route">/tasks?view=team</span>
+            <p>Who has not posted today, blockers and next steps, overdue and blocked tasks, reports past their acknowledgement target, and assigned work.</p></div>
+          <ul class="how"><li>Filter by department. Lists only, no scores.</li></ul>
+        </div>
+        <figure><img src="screens/10-team-progress.png" alt="Team progress" loading="lazy" width="1440" height="900"></figure>
+      </div>
+    </section>
+
+    <section id="releases">
+      <div class="section-head">
+        <span class="label">Releases</span>
+        <h2>Software releases and announcements</h2>
+        <p>A release can only be announced once the Software head <em>and</em> the manager, two different people, have approved the exact current revision.</p>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Release history</h3><span class="route">/releases</span>
+            <p>Every GCS and Configurator release with its latest revision and approval state. Old records migrated from the previous "push update" screen are labelled as not approved under the current process.</p></div>
+          <ul class="how"><li>Software members with drafting rights can start a release from here.</li></ul>
+        </div>
+        <figure><img src="screens/11-releases.png" alt="Release history" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Release detail and announcement</h3><span class="route">/releases/&lt;id&gt;</span>
+            <p>The revision content, both approvals, and the announcement email.</p></div>
+          <ul class="how">
+            <li>Editing creates a new revision and clears approvals.</li>
+            <li>Preview shows the exact subject, body and recipient list before anything is sent. Internal notes never go into the email.</li>
+            <li>Send works once, even on a double click. Each recipient's delivery is tracked; failed ones can be retried and uncertain ones reconciled.</li>
+            <li>Recipients are synthetic test addresses until the signup API is connected.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/12-release-detail.png" alt="Release detail with approvals and announcement" loading="lazy" width="1440" height="900"></figure>
+      </div>
+    </section>
+
+    <section id="hardware">
+      <div class="section-head">
+        <span class="label">Hardware</span>
+        <h2>Flight controllers, firmware and test evidence</h2>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Flight controllers</h3><span class="route">/fcs</span>
+            <p>Every registered unit with model, revision, stage, status and open issues. Search by serial, revision or batch.</p></div>
+          <ul class="how"><li>Serials are assigned automatically (FC-YYYY-NNNNN) when a unit is registered.</li></ul>
+        </div>
+        <figure><img src="screens/13-fcs.png" alt="Flight controller list" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>FC detail</h3><span class="route">/fcs/&lt;id&gt;</span>
+            <p>The unit's whole life: the 11 lifecycle stages, timeline, issues, firmware flashed, test results and audit.</p></div>
+          <ul class="how">
+            <li>A stage cannot pass while it has unverified blocking issues.</li>
+            <li>Only the manager can approve or reject at the final stage; rejecting asks for confirmation.</li>
+            <li>"Report an issue" pre-fills the FC and stage.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/14-fc-detail.png" alt="FC detail with lifecycle" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Stage records and rework</h3>
+            <p>Every attempt at every stage. A failed stage can record rework and send the unit back to an allowed earlier stage.</p></div>
+          <ul class="how"><li>Rework links to the issue that caused it, so the timeline tells the full story.</li></ul>
+        </div>
+        <figure><img src="screens/15-fc-stages.png" alt="Stage records" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Register a flight controller</h3><span class="route">/fcs/new</span>
+            <p>Model, hardware revision, PCB batch. The unit starts at Fabrication.</p></div>
+          <ul class="how"><li>Shown only to production roles.</li></ul>
+        </div>
+        <figure><img src="screens/16-fc-register.png" alt="Register FC form" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Test &amp; evidence: parameter compare</h3><span class="route">/param-compare</span>
+            <p>Compare two <code>.param</code> dumps: changed values, parameters on one side only, grouped and filterable, with a tolerance for float noise.</p></div>
+          <ul class="how"><li>Dumps can be stored against an FC to keep approved, flashed and read-back configuration apart.</li></ul>
+        </div>
+        <figure><img src="screens/17-param-compare.png" alt="Parameter compare" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Firmware catalogue</h3><span class="route">/firmware/builds</span>
+            <p>The builds that can be flashed: version, source, signing, bootloader, scripts. Maintained by the Firmware team.</p></div>
+          <ul class="how">
+            <li>Flashing copies the build's details onto the FC record, so history stays accurate if the catalogue changes.</li>
+            <li>Builds are retired, not deleted.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/18-firmware.png" alt="Firmware catalogue" loading="lazy" width="1440" height="900"></figure>
+      </div>
+    </section>
+
+    <section id="knowledge">
+      <div class="section-head">
+        <span class="label">Knowledge</span>
+        <h2>Known issues, search and activity</h2>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Known issues</h3><span class="route">/known-issues</span>
+            <p>Curated entries promoted from resolved issues: symptoms, root cause, fix, affected versions and how often it has occurred.</p></div>
+          <ul class="how"><li>Occurrences open on demand and respect access rules.</li></ul>
+        </div>
+        <figure><img src="screens/19-known-issues.png" alt="Known issues" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Knowledge search</h3><span class="route">/search</span>
+            <p>Full-text search over symptoms, root causes and fixes with structured filters for stage, category, and hardware, firmware, GCS and Configurator versions.</p></div>
+          <ul class="how"><li>Matching known issues are shown above raw results.</li></ul>
+        </div>
+        <figure><img src="screens/20-search.png" alt="Knowledge search" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Activity log</h3><span class="route">/audit</span>
+            <p>Append-only record of changes with before and after values. The application and database refuse edits and deletes.</p></div>
+          <ul class="how"><li>Shows only changes to records the viewer may see.</li></ul>
+        </div>
+        <figure><img src="screens/21-activity.png" alt="Activity log" loading="lazy" width="1440" height="900"></figure>
+      </div>
+    </section>
+
+    <section id="admin">
+      <div class="section-head">
+        <span class="label">Configuration</span>
+        <h2>Test checklists, FC models and accounts</h2>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Test configuration (manager)</h3><span class="route">/manager/test-configuration</span>
+            <p>The checklists testers answer at each test stage.</p></div>
+          <ul class="how">
+            <li>Every change bumps the checklist version; completed tests keep the exact items they answered.</li>
+            <li>Items already answered can be disabled but not removed.</li>
+          </ul>
+        </div>
+        <figure><img src="screens/22-test-config.png" alt="Test configuration" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>FC models (manager)</h3><span class="route">/manager/fc-models</span>
+            <p>Models offered when registering a unit. Archived, never deleted, so existing units stay valid.</p></div>
+          <ul class="how"><li>Archiving asks for confirmation first.</li></ul>
+        </div>
+        <figure><img src="screens/23-fc-models.png" alt="FC models" loading="lazy" width="1440" height="900"></figure>
+      </div>
+      <div class="screen">
+        <div class="screen-text">
+          <div><h3>Accounts (admin)</h3><span class="route">/admin</span>
+            <p>Users and roles, departments, and the GCS/Configurator version list used on test records.</p></div>
+          <ul class="how"><li>Role changes update the matching permissions and are audited.</li></ul>
+        </div>
+        <figure><img src="screens/24-accounts.png" alt="Accounts" loading="lazy" width="1440" height="900"></figure>
+      </div>
+    </section>
+
+    <section id="flows">
+      <div class="section-head">
+        <span class="label">How it fits together</span>
+        <h2>Key workflows</h2>
+        <p>Highlighted steps are control points the system enforces.</p>
+      </div>
+      <div class="flow-block">
+        <h3>A reported problem</h3>
+        <div class="flow">
+          <span class="step">Report</span><span class="arrow">→</span>
+          <span class="step">Routed to team queue</span><span class="arrow">→</span>
+          <span class="step gate">Acknowledge by deadline</span><span class="arrow">→</span>
+          <span class="step">Investigate (notes, handoffs)</span><span class="arrow">→</span>
+          <span class="step">Resolve with root cause</span><span class="arrow">→</span>
+          <span class="step gate">Verified by a different person</span><span class="arrow">→</span>
+          <span class="step">Close</span><span class="arrow">→</span>
+          <span class="step">Promote to known issue</span>
+        </div>
+        <p>Missed acknowledgement deadlines escalate. A handoff changes the owner only when the receiving team accepts.</p>
+      </div>
+      <div class="flow-block">
+        <h3>A flight controller</h3>
+        <div class="flow">
+          <span class="step">Register</span><span class="arrow">→</span>
+          <span class="step">Assembly, soldering, QC</span><span class="arrow">→</span>
+          <span class="step">Firmware flash</span><span class="arrow">→</span>
+          <span class="step">Sensor, bench, ground, final tests</span><span class="arrow">→</span>
+          <span class="step gate">Manager approval</span>
+        </div>
+        <p>A failed stage raises an issue; rework returns the unit to an allowed earlier stage. Blocking issues must be resolved and verified before a stage can pass.</p>
+      </div>
+      <div class="flow-block">
+        <h3>A software release</h3>
+        <div class="flow">
+          <span class="step">Draft revision</span><span class="arrow">→</span>
+          <span class="step gate">Software head approves</span><span class="arrow">+</span>
+          <span class="step gate">Manager approves</span><span class="arrow">→</span>
+          <span class="step">Preview email</span><span class="arrow">→</span>
+          <span class="step gate">Send once</span><span class="arrow">→</span>
+          <span class="step">Track each delivery</span>
+        </div>
+        <p>Any edit creates a new revision that needs both approvals again. Sending announces a release; it does not install it.</p>
+      </div>
+    </section>
+
+    <section id="safeguards">
+      <div class="section-head">
+        <span class="label">Controls</span>
+        <h2>Safeguards built in</h2>
+      </div>
+      <ul class="list">
+        <li><strong>Server-side access checks</strong> on every list, search, count, linked record, attachment and export path. Hiding a button is never the control.</li>
+        <li><strong>Two-person rules:</strong> release approval needs two different people; fix verification needs someone other than the resolver.</li>
+        <li><strong>Nothing silently lost:</strong> append-only notes, updates and activity log; reassignments need a reason; models and builds are archived, not deleted.</li>
+        <li><strong>Evidence kept separate:</strong> discovery facts, root cause, approved parameters, flashed configuration and read-back evidence are recorded separately with provenance.</li>
+        <li><strong>Email is deliberate:</strong> preview first, one send per draft, per-recipient history. Only synthetic test recipients today.</li>
+        <li><strong>Sessions:</strong> HttpOnly cookie and CSRF protection; no credentials in browser storage.</li>
+      </ul>
+    </section>
+
+    <section id="quality">
+      <div class="section-head">
+        <span class="label">This round</span>
+        <h2>UI rework and testing (20 Oct 2026)</h2>
+      </div>
+      <div class="screen-text">
+        <div>
+          <h3>What changed in the interface</h3>
+          <ul class="how">
+            <li>Each feature is now its own module (issues, tasks, releases, FCs, firmware, knowledge, configuration, admin) that owns its screens and routes.</li>
+            <li>Screens load on first visit, so the app stays fast as features are added.</li>
+            <li>Long lists load 25 at a time as you scroll, with a "Showing N of M" count.</li>
+            <li>In-app dialogs replace browser pop-ups for reasons and confirmations; short confirmations appear as toasts.</li>
+            <li>Phone drawer menu, search bar on every page, back links on detail pages, subtle animations that switch off when the device asks for reduced motion.</li>
+            <li>Removed duplicate admin screens and fixed several layout bugs.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>How it was tested</h3>
+          <ul class="how">
+            <li>269 backend tests passed on a disposable local database.</li>
+            <li>Three browser walkthroughs, 49 steps, nine user accounts, on a fresh disposable database: production loop, configuration, and everyday work including releases and the phone layout. No page errors.</li>
+            <li>Permission refusals are checked in the browser as well as in tests (e.g. a technician cannot reassign another team's issue).</li>
+            <li>No shared or live data was touched; no real email was sent.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="next">
+      <div class="section-head">
+        <span class="label">Decisions and next steps</span>
+        <h2>What comes next</h2>
+      </div>
+      <div class="callout">
+        <strong>Needs a decision</strong>
+        <p>WP14 needs approval to work against the shared database. Still open from the requirements: the signup API contract for real recipients, approval to send real email, whether daily updates are mandatory and for whom, and whether issues raised from an FC's lifecycle page should be routed to a queue owner like other reports (today they show "No owner yet").</p>
+      </div>
+      <h3>Small additions that would help (one or two passes each)</h3>
+      <div class="ideas">
+        <div class="idea"><h3>Customers &amp; deployments screens</h3><p>The data and access rules exist since WP9 but have no screens yet. A list, a customer page with deployments and linked units, and contacts for those with permission.</p></div>
+        <div class="idea"><h3>Acknowledge and hand off from the issue page</h3><p>Today these actions live in My queue only. Adding them to the issue page uses existing, tested server actions.</p></div>
+        <div class="idea"><h3>Clickable notifications</h3><p>Open the related issue, release or task straight from the bell instead of reading the text and searching.</p></div>
+        <div class="idea"><h3>Shareable list filters</h3><p>Keep issue, FC and activity filters in the page address so a filtered view can be bookmarked or sent to a colleague.</p></div>
+        <div class="idea"><h3>Dark mode</h3><p>The colour system is already built on tokens, so a dark theme for night shifts and test benches is mostly a palette.</p></div>
+      </div>
+    </section>
+  </main>
+</div>

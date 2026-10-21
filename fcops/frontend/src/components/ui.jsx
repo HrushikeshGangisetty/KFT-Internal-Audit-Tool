@@ -27,6 +27,9 @@ const ICONS = {
   home: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
   tasks: 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9',
+  menu: 'M3 6h18M3 12h18M3 18h18',
+  x: 'M18 6 6 18M6 6l12 12',
+  back: 'M19 12H5M12 19l-7-7 7-7',
 }
 
 export function Icon({ name, size = 16, ...rest }) {
@@ -42,11 +45,25 @@ export function Icon({ name, size = 16, ...rest }) {
    Layout primitives
    ------------------------------------------------------------------------- */
 
-/** Top-of-page title block. `meta` renders a row of tags under the title. */
-export function PageHeader({ title, subtitle, meta, actions, mono }) {
+export const APP_NAME = 'KFT Engineering'
+
+/** Sets the browser tab title; plain strings only. */
+export function useTitle(title) {
+  useEffect(() => {
+    if (typeof title === 'string') document.title = `${title} · ${APP_NAME}`
+  }, [title])
+}
+
+/**
+ * Top-of-page title block. `meta` renders a row of tags under the title;
+ * `back` is { to, label } for detail pages.
+ */
+export function PageHeader({ title, subtitle, meta, actions, mono, back }) {
+  useTitle(title)
   return (
     <header className="page-header">
       <div className="page-header-text">
+        {back ? <Link className="back-link" to={back.to}><Icon name="back" size={14} />{back.label}</Link> : null}
         <h1 className={mono ? 'mono' : undefined}>{title}</h1>
         {subtitle ? <p className="subtitle">{subtitle}</p> : null}
         {meta ? <div className="meta-row">{meta}</div> : null}
@@ -219,7 +236,9 @@ export function PageSkeleton({ stats = 0, split = false }) {
 export function Loading({ what = 'data', variant = 'table', rows, cols }) {
   return (
     <div aria-busy="true" aria-label={`Loading ${what}`}>
-      {variant === 'text' ? <SkeletonText lines={rows ?? 3} /> : <SkeletonTable rows={rows} cols={cols} />}
+      {variant === 'text' ? <SkeletonText lines={rows ?? 3} />
+        : variant === 'page' ? <PageSkeleton split />
+          : <SkeletonTable rows={rows} cols={cols} />}
     </div>
   )
 }
